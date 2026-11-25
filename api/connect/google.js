@@ -35,9 +35,11 @@ module.exports = async (req, res) => {
   const redirectUri = `${origin}/api/callback/google`;
 
   const scopes = [
+    'openid',
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/calendar.events',
     'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
   ];
 
   const state = signState(session.clinicId, 'google', clientSecret);

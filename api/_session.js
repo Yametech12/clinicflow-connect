@@ -137,6 +137,20 @@ function setClinicKeyCookie(req, res, clinicKey) {
   appendSetCookie(res, buildCookieString(req, CLINIC_KEY_COOKIE_NAME, clinicKey));
 }
 
+function buildExpiredCookieString(req, name) {
+  const { proto } = getRequestOrigin(req);
+  const parts = [`${name}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0'];
+  if (proto === 'https') {
+    parts.push('Secure');
+  }
+  return parts.join('; ');
+}
+
+function clearClinicCookies(req, res) {
+  appendSetCookie(res, buildExpiredCookieString(req, CLINIC_COOKIE_NAME));
+  appendSetCookie(res, buildExpiredCookieString(req, CLINIC_KEY_COOKIE_NAME));
+}
+
 async function ensureClinicSession(req, res, store, clinicStore) {
   const existingId = getClinicIdFromRequest(req);
   const existingKey = getClinicKeyFromRequest(req);
@@ -410,6 +424,7 @@ function sanitizeClinicSummary(clinic, { includeSensitive = true } = {}) {
       },
       google: {
         connected: googleConnected,
+        bound: Boolean(google.googleSub),
         has_refresh_token: Boolean(google.refreshToken),
         email: includeSensitive ? (google.email || null) : null,
         spreadsheet_id: includeSensitive ? (google.spreadsheetId || null) : null,
@@ -451,6 +466,7 @@ module.exports = {
   getClinicKeyFromRequest,
   setClinicCookie,
   setClinicKeyCookie,
+  clearClinicCookies,
   ensureClinicSession,
   signState,
   verifyState,

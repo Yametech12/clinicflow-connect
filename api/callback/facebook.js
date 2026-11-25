@@ -112,7 +112,7 @@ async function completePageConnection({ req, res, clinicId, page, isHtml }) {
   await ensureMetaRecordOnCallback(req, res, clinicId);
 
   if (isHtml) {
-    return redirect(res, '/?connected=facebook');
+    return redirect(res, '/dashboard?connected=facebook');
   }
 
   return res.status(200).json({

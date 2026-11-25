@@ -25,18 +25,7 @@
     --save-hover:#2d3832;
     --amber:#b45309;
     --amber-bg:#fdf3e3;
-    --green:#15803d;
-    --green-bg:#e9f6ec;
-    --gray-bg:#efece5;
     --card:#ffffff;
-    --tg-bg:#f2faf8;
-    --status-bg:#1c2420;
-    --status-ink:#f2efe8;
-    --status-muted:#b9c2bc;
-    --status-line:#333d38;
-    --dot-idle:#8a948e;
-    --dot-pending:#f59e0b;
-    --dot-linked:#4ade80;
     --chat-bg:#f4f2ec;
     --chat-user-bg:#0f766e;
     --chat-user-ink:#ffffff;
@@ -55,15 +44,7 @@
       --save-hover:#d6d0c2;
       --amber:#fbbf24;
       --amber-bg:#3b280c;
-      --green:#4ade80;
-      --green-bg:#132d1c;
-      --gray-bg:#26302b;
       --card:#1d2420;
-      --tg-bg:#162823;
-      --status-bg:#101512;
-      --status-ink:#ece8dd;
-      --status-muted:#9aa79f;
-      --status-line:#2a332e;
       --chat-bg:#141a17;
       --chat-user-bg:#2dd4bf;
       --chat-user-ink:#0e1714;
@@ -78,33 +59,29 @@
     -webkit-font-smoothing:antialiased;
   }
   .wrap{max-width:960px;margin:0 auto;padding:0 20px}
-  .progress-bar{
-    position:sticky;top:0;z-index:20;
-    background:var(--paper);
-    border-bottom:1px solid var(--line);
-    padding:10px 0;
-  }
-  .progress-inner{
-    display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
-  }
-  .progress-segments{
-    display:grid;grid-template-columns:repeat(4,1fr);gap:8px;flex:1;min-width:240px;
-  }
-  .seg{display:flex;flex-direction:column;gap:4px}
-  .seg-track{height:6px;border-radius:999px;background:var(--line);overflow:hidden}
-  .seg-fill{height:100%;width:0;background:var(--teal);transition:width .25s ease}
-  .seg.done .seg-fill{width:100%}
-  .seg-label{font-size:11.5px;font-weight:600;color:var(--muted)}
-  .seg.done .seg-label{color:var(--ink)}
-  .progress-count{font-size:12.5px;font-weight:700;color:var(--ink);white-space:nowrap}
   header.top{
     border-bottom:2px solid var(--ink);
     padding:18px 0 14px;
-    display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap;
+    display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
   }
   .brand{font-family:Georgia,"Times New Roman",serif;font-size:26px;font-weight:700;letter-spacing:.2px}
   .brand span{color:var(--teal)}
+  .head-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   .topnote{font-size:13px;color:var(--muted)}
+  button.loginbtn{
+    background:var(--teal);color:var(--btn-text);border:none;border-radius:4px;
+    padding:10px 18px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;
+    font-size:14.5px;font-weight:600;cursor:pointer;
+  }
+  button.loginbtn:hover{background:var(--teal-dark)}
+  button.loginbtn:disabled{opacity:.65;cursor:wait}
+  button.loginbtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .login-banner{
+    display:none;margin:18px 0 0;padding:12px 14px;border-radius:4px;
+    background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber);
+    font-size:14px;font-weight:600;align-items:center;gap:12px;flex-wrap:wrap;
+  }
+  .login-banner.show{display:flex}
   .hero{padding:40px 0 8px}
   .kicker{font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px}
   h1{font-family:Georgia,"Times New Roman",serif;font-size:40px;line-height:1.15;font-weight:700;max-width:680px}
@@ -112,11 +89,12 @@
   .hero p.lede2{margin-top:10px}
   .herobtn{
     margin-top:20px;display:inline-flex;align-items:center;justify-content:center;
-    min-height:48px;padding:11px 20px;border-radius:4px;
-    background:var(--teal);color:var(--btn-text);text-decoration:none;
-    font-size:15px;font-weight:600;
+    min-height:48px;padding:11px 20px;border-radius:4px;border:none;
+    background:var(--teal);color:var(--btn-text);text-decoration:none;cursor:pointer;
+    font-size:15px;font-weight:600;font-family:inherit;
   }
   .herobtn:hover{background:var(--teal-dark)}
+  .herobtn:disabled{opacity:.65;cursor:wait}
   .herobtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .howseq{
     margin:28px 0 6px;border:1px solid var(--line);background:var(--card);
@@ -130,10 +108,9 @@
   }
   .howstep b{display:block;font-size:14px;margin-bottom:4px}
   .howstep p{font-size:13.5px;color:var(--muted)}
-  section{padding:30px 0 6px;scroll-margin-top:76px}
+  section{padding:30px 0 6px}
   h2{font-family:Georgia,"Times New Roman",serif;font-size:24px;margin-bottom:6px}
   .sub{color:var(--muted);font-size:14.5px;max-width:640px}
-  .sub + .sub{margin-top:8px}
   .demo-panel{
     margin-top:16px;border:1px solid var(--line);background:var(--card);
     padding:20px 22px;display:grid;grid-template-columns:1fr 1.15fr;gap:22px;align-items:start;
@@ -155,6 +132,19 @@
   .demo-sheet-row strong{color:var(--ink);font-weight:600}
   .demo-controls{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
   .demo-controls .demo-field{flex:1;min-width:150px}
+  label{font-size:12.5px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px}
+  input[type=text]{
+    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:4px;
+    font-size:16px;background:var(--card);color:var(--ink);
+  }
+  input[type=text]:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
+  button.savebtn{
+    background:var(--save-bg);color:var(--save-text);border:none;border-radius:4px;
+    padding:10px 16px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;
+    font-size:14px;font-weight:600;cursor:pointer;
+  }
+  button.savebtn:hover{background:var(--save-hover)}
+  button.savebtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .phone-mock{
     border:2px solid var(--ink);border-radius:14px;background:var(--chat-bg);overflow:hidden;
   }
@@ -173,99 +163,13 @@
   .bubble.bot{
     align-self:flex-start;background:var(--card);border:1px solid var(--line);color:var(--ink);
   }
-  form.profile{
-    margin-top:16px;background:var(--card);border:1px solid var(--line);padding:20px 22px;
-    display:grid;grid-template-columns:1fr 1fr;gap:14px;
-  }
-  form.profile .full{grid-column:1 / -1}
-  label{font-size:12.5px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px}
-  input[type=text]{
-    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:4px;
-    font-size:16px;background:var(--card);color:var(--ink);
-  }
-  input[type=text]:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
-  .formactions{grid-column:1 / -1;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-  .formnote{font-size:12.5px;color:var(--muted)}
-  button.savebtn{
-    background:var(--save-bg);color:var(--save-text);border:none;border-radius:4px;
-    padding:10px 16px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;
-    font-size:14px;font-weight:600;cursor:pointer;
-  }
-  button.savebtn:hover{background:var(--save-hover)}
-  button.savebtn:disabled{opacity:.6;cursor:wait}
-  button.savebtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-  .return-banner{
-    display:none;margin:0 0 16px;padding:12px 14px;border-radius:4px;
-    background:var(--green-bg);color:var(--green);border:1px solid var(--green);
-    font-size:14px;font-weight:600;
-  }
-  .return-banner.warn{background:var(--amber-bg);color:var(--amber);border-color:var(--amber)}
-  .return-banner.show{display:block}
-  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px}
-  .card{
-    background:var(--card);border:1px solid var(--line);border-top:4px solid var(--teal);
-    padding:20px;display:flex;flex-direction:column;gap:10px;
-  }
-  .stepnum{font-size:12px;font-weight:700;letter-spacing:2px;color:var(--teal)}
-  .card h3{font-size:18px;font-family:Georgia,"Times New Roman",serif}
-  .card p.cardbody{font-size:14px;color:var(--muted);flex:1}
-  .safety-line{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:8px}
-  .pill{
-    display:inline-block;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;
-    background:var(--gray-bg);color:var(--muted);align-self:flex-start;
-  }
-  .pill.checking{animation:pillPulse 1.2s ease-in-out infinite}
-  @keyframes pillPulse{0%,100%{opacity:1}50%{opacity:.55}}
-  @media (prefers-reduced-motion: reduce){
-    .pill.checking{animation:none}
-    .seg-fill{transition:none}
-  }
-  .pill.pending{background:var(--amber-bg);color:var(--amber)}
-  .pill.ready{background:var(--gray-bg);color:var(--ink)}
-  .pill.linked{background:var(--green-bg);color:var(--green)}
-  button.connect{
-    background:var(--teal);color:var(--btn-text);border:none;border-radius:4px;
-    padding:11px 14px;min-height:48px;display:flex;align-items:center;justify-content:center;
-    font-size:14.5px;font-weight:600;cursor:pointer;text-align:center;width:100%;
-  }
-  button.connect:hover{background:var(--teal-dark)}
-  button.connect:disabled{opacity:.65;cursor:wait}
-  button.connect:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-  .cardmsg{font-size:13px;color:var(--muted);display:none}
-  .cardmsg.show{display:block}
-  .cardmsg a{color:var(--teal);font-weight:600}
-  .tgcode{
-    visibility:hidden;min-height:118px;border:1px dashed var(--teal);
-    background:var(--tg-bg);padding:12px;text-align:center;
-    display:flex;flex-direction:column;justify-content:center;
-  }
-  .tgcode.show{visibility:visible}
-  .tgcode .code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:24px;letter-spacing:4px;font-weight:700;color:var(--teal)}
-  .tgcode p{font-size:12.5px;color:var(--muted);margin-top:4px}
-  .tgcode a{color:var(--teal);font-weight:600}
   .pilotbox{
     margin-top:16px;background:var(--card);border:1px solid var(--line);
     border-left:4px solid var(--teal);padding:20px 22px;display:flex;flex-direction:column;gap:8px;
   }
   .pilotbox p{font-size:14.5px;color:var(--ink)}
   .pilotbox p.pilotnext{font-size:14px;color:var(--muted)}
-  .statusbox{
-    margin-top:16px;background:var(--status-bg);color:var(--status-ink);padding:20px 22px;
-  }
-  .statusbox h3{font-family:Georgia,"Times New Roman",serif;font-size:17px;margin-bottom:8px}
-  .status-summary{
-    font-size:14px;color:var(--status-ink);background:rgba(255,255,255,.06);
-    padding:9px 12px;border-radius:4px;margin-bottom:10px;display:none;
-  }
-  .status-summary.show{display:block}
-  .statusbox ul{list-style:none;font-size:14px}
-  .statusbox li{padding:7px 0;border-bottom:1px solid var(--status-line);display:flex;justify-content:space-between;align-items:center;gap:12px}
-  .statusbox li:last-child{border-bottom:none}
-  .statusbox .val{font-weight:600;text-align:right;display:inline-flex;align-items:center;gap:8px}
-  .dot{width:9px;height:9px;border-radius:50%;background:var(--dot-idle);flex-shrink:0;display:inline-block}
-  .dot.linked{background:var(--dot-linked)}
-  .dot.pending{background:var(--dot-pending)}
-  .statusnote{font-size:12.5px;color:var(--status-muted);margin-top:10px}
+  .pilotbox .herobtn{align-self:flex-start;margin-top:6px}
   footer{
     margin-top:44px;border-top:2px solid var(--ink);padding:16px 0 30px;
     font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:8px;
@@ -276,44 +180,25 @@
     .howseq{grid-template-columns:1fr}
     .howstep + .howstep{border-left:none;border-top:1px solid var(--line)}
     .demo-panel{grid-template-columns:1fr}
-    .cards{grid-template-columns:1fr}
-    form.profile{grid-template-columns:1fr}
     .demo-controls{flex-direction:column;align-items:stretch;gap:10px}
-    .formactions{flex-direction:column;align-items:stretch;gap:10px}
   }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-  <nav class="progress-bar" aria-label="Setup progress">
-    <div class="progress-inner">
-      <div class="progress-segments">
-        <div class="seg" id="prog-profile">
-          <div class="seg-track"><div class="seg-fill"></div></div>
-          <span class="seg-label">Profile</span>
-        </div>
-        <div class="seg" id="prog-facebook">
-          <div class="seg-track"><div class="seg-fill"></div></div>
-          <span class="seg-label">Facebook</span>
-        </div>
-        <div class="seg" id="prog-google">
-          <div class="seg-track"><div class="seg-fill"></div></div>
-          <span class="seg-label">Google</span>
-        </div>
-        <div class="seg" id="prog-telegram">
-          <div class="seg-track"><div class="seg-fill"></div></div>
-          <span class="seg-label">Telegram</span>
-        </div>
-      </div>
-      <div class="progress-count" id="progressCount">0 of 4 done</div>
-    </div>
-  </nav>
-
   <header class="top">
     <div class="brand">ClinicFlow <span>PH</span></div>
-    <div class="topnote">Messenger front desk for Philippine dental clinics</div>
+    <div class="head-actions">
+      <div class="topnote">Messenger front desk for Philippine dental clinics</div>
+      <button class="loginbtn" type="button" data-login>Log in</button>
+    </div>
   </header>
+
+  <div class="login-banner" id="loginBanner" role="status">
+    <span id="loginBannerText">Log in with Google to open your dashboard.</span>
+    <button class="loginbtn" type="button" data-login>Log in with Google</button>
+  </div>
 
   <div class="hero">
     <div class="kicker">Connect once, reply forever</div>
@@ -324,7 +209,7 @@
     <p class="lede lede2">
       Every confirmed booking also reaches your phone by Telegram. Kahit sarado na ang clinic, may sumasagot sa pasyente.
     </p>
-    <a class="herobtn" href="#profile">Start setup below</a>
+    <button class="herobtn" type="button" data-login>Start a pilot</button>
 
     <div class="howseq">
       <div class="howstep">
@@ -380,101 +265,12 @@
     </div>
   </section>
 
-  <section id="profile">
-    <h2>Your clinic profile</h2>
-    <p class="sub">These details are what the bot tells patients: your name, address, and hours. You can fill this in now or after you connect.</p>
-    <form class="profile" id="profileForm">
-      <div class="full">
-        <label for="clinicName">Clinic name</label>
-        <input type="text" id="clinicName" placeholder="BrightSmile Dental Clinic" autocomplete="organization">
-      </div>
-      <div>
-        <label for="clinicAddress">Address</label>
-        <input type="text" id="clinicAddress" placeholder="Quezon Ave., Iligan City" autocomplete="street-address">
-      </div>
-      <div>
-        <label for="clinicHours">Clinic hours</label>
-        <input type="text" id="clinicHours" placeholder="Mon to Sat, 9:00 AM to 6:00 PM">
-      </div>
-      <div class="full">
-        <label for="clinicSheetId">Your booking sheet, if you already have one (optional)</label>
-        <input type="text" id="clinicSheetId" placeholder="Leave blank. ClinicFlow creates your booking sheet when you connect Google.">
-      </div>
-      <div class="formactions">
-        <button class="savebtn" type="submit" id="saveProfileBtn">Save clinic profile</button>
-        <span class="formnote" id="profileNote">Checking your saved details.</span>
-      </div>
-    </form>
-  </section>
-
-  <section id="connect">
-    <div class="return-banner" id="returnBanner" role="status"></div>
-    <h2>Connect your accounts</h2>
-    <p class="sub">
-      Every account below stays under your name. You sign in with your own Facebook, Google,
-      and Telegram. ClinicFlow only receives the permission each button asks for, nothing more.
-    </p>
-    <p class="sub">
-      Connect all three. Facebook lets the bot answer patients, Google is where bookings are written down, and Telegram is how you hear about each booking right away.
-    </p>
-
-    <div class="cards">
-      <div class="card" id="card-facebook">
-        <div class="stepnum">STEP 1</div>
-        <h3>Facebook Page</h3>
-        <p class="cardbody">Connect your clinic Page so ClinicFlow can read and reply to patient messages on Messenger for you.</p>
-        <p class="safety-line">Safe: you sign in on Facebook's own page. ClinicFlow never sees your password, and you can remove access anytime in Facebook Settings.</p>
-        <span class="pill checking" data-pill>Checking status</span>
-        <button class="connect" data-connect="facebook">Connect Facebook Page</button>
-        <p class="cardmsg" data-msg></p>
-      </div>
-
-      <div class="card" id="card-google">
-        <div class="stepnum">STEP 2</div>
-        <h3>Google</h3>
-        <p class="cardbody">Connect Google so each booking is written into a sheet you own and added to your calendar.</p>
-        <p class="safety-line">Safe: you sign in on Google's own page. The booking sheet and calendar are created inside your Google account, and you can remove access anytime in your Google Account settings.</p>
-        <span class="pill checking" data-pill>Checking status</span>
-        <button class="connect" data-connect="google">Connect Google</button>
-        <p class="cardmsg" data-msg></p>
-      </div>
-
-      <div class="card" id="card-telegram">
-        <div class="stepnum">STEP 3</div>
-        <h3>Telegram alerts</h3>
-        <p class="cardbody">Link Telegram so every confirmed booking reaches your phone the moment it happens.</p>
-        <p class="safety-line">Safe: you only tap Start in a chat with our alert bot. No password is asked, and you can block the bot anytime to stop alerts.</p>
-        <span class="pill checking" data-pill>Checking status</span>
-        <button class="connect" data-connect="telegram">Connect Telegram</button>
-        <div class="tgcode" data-tgbox aria-hidden="true">
-          <div class="code" data-tgcode></div>
-          <p data-tgtext></p>
-        </div>
-        <p class="cardmsg" data-msg></p>
-      </div>
-    </div>
-  </section>
-
   <section id="pilot">
     <h2>Start with a pilot setup</h2>
     <div class="pilotbox">
       <p>We set up Sprint 1 for your clinic: the Messenger bot that answers prices and books appointments, connected to your own accounts above. Pilot price: ₱5,500 one time (regular setup ₱12,000). You own every account and file; we only install and configure.</p>
-      <p class="pilotnext">To get started, finish the three connections above. Your pilot begins once your Page, Google, and Telegram are all connected.</p>
-    </div>
-  </section>
-
-  <section id="status">
-    <h2>Connection status</h2>
-    <p class="sub">This list is read live from the server, so what you see is the real state of your setup. A step is only marked connected after the server confirms it.</p>
-    <div class="statusbox">
-      <h3>Your connections</h3>
-      <div class="status-summary" id="statusSummary"></div>
-      <ul>
-        <li><span>Facebook Page</span><span class="val"><span class="dot" id="dot-facebook"></span><span id="st-facebook">Checking</span></span></li>
-        <li><span>Google (Sheets and Calendar)</span><span class="val"><span class="dot" id="dot-google"></span><span id="st-google">Checking</span></span></li>
-        <li><span>Telegram alerts</span><span class="val"><span class="dot" id="dot-telegram"></span><span id="st-telegram">Checking</span></span></li>
-      </ul>
-      <p class="statusnote" id="statusNote">Reading server status.</p>
+      <p class="pilotnext">To get started, log in with Google, then finish the three connections in your dashboard. Your pilot begins once your Page, Google, and Telegram are all connected.</p>
+      <button class="herobtn" type="button" data-login>Start a pilot</button>
     </div>
   </section>
 
@@ -490,11 +286,6 @@
 
 <script>
 (function () {
-  var state = { facebook: 'unknown', google: 'unknown', telegram: 'unknown' };
-  var serverData = { health: null, clinic: null };
-  var tgPollTimer = null;
-  var PROFILE_KEY = 'clinicflow_profile';
-
   // Sample demo engine (front-end only, zero backend calls)
   var samplePrices = { cleaning: '₱1,500', extraction: '₱1,800', filling: '₱1,400' };
   function renderDemoReply() {
@@ -528,465 +319,54 @@
     });
   }
 
-  function pill(cardId, text, cls) {
-    var el = document.querySelector('#' + cardId + ' [data-pill]');
-    if (!el) return;
-    el.textContent = text;
-    el.className = 'pill' + (cls ? ' ' + cls : '');
+  function showLoginBanner(text) {
+    var banner = document.getElementById('loginBanner');
+    var label = document.getElementById('loginBannerText');
+    if (!banner || !label) return;
+    if (text) label.textContent = text;
+    banner.className = 'login-banner show';
+    banner.scrollIntoView({ block: 'nearest' });
   }
 
-  function statusLine(id, dotId, text, dotCls) {
-    var el = document.getElementById(id);
-    if (el) el.textContent = text;
-    var dot = document.getElementById(dotId);
-    if (dot) dot.className = 'dot' + (dotCls ? ' ' + dotCls : '');
-  }
-
-  function cardMsg(cardId, text, linkUrl, linkLabel) {
-    var el = document.querySelector('#' + cardId + ' [data-msg]');
-    if (!el) return;
-    el.textContent = '';
-    if (!text && !linkUrl) {
-      el.className = 'cardmsg';
-      return;
-    }
-    if (text) {
-      el.appendChild(document.createTextNode(text));
-    }
-    if (linkUrl) {
-      if (text) el.appendChild(document.createTextNode(' '));
-      var a = document.createElement('a');
-      a.href = linkUrl;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.textContent = linkLabel || linkUrl;
-      el.appendChild(a);
-    }
-    el.className = 'cardmsg show';
-  }
-
-  function getConnectedDetail(key) {
-    var c = serverData.clinic && serverData.clinic.connections && serverData.clinic.connections[key];
-    if (!c || !c.connected) return '';
-    if (key === 'facebook') return c.page_name || c.page_id || 'Page linked';
-    if (key === 'google') return c.email || 'Google account';
-    if (key === 'telegram') {
-      if (c.username) return '@' + c.username;
-      if (c.first_name) return c.first_name;
-      return c.chat_id_masked || 'Telegram chat';
-    }
-    return '';
-  }
-
-  function updateProgressBar() {
-    var clinic = serverData.clinic;
-    var profileDone = Boolean(clinic && clinic.profile && String(clinic.profile.name || '').trim());
-    var fbDone = state.facebook === 'connected';
-    var ggDone = state.google === 'connected';
-    var tgDone = state.telegram === 'connected';
-
-    var checks = [
-      ['prog-profile', profileDone],
-      ['prog-facebook', fbDone],
-      ['prog-google', ggDone],
-      ['prog-telegram', tgDone]
-    ];
-    var doneCount = 0;
-    checks.forEach(function (item) {
-      var el = document.getElementById(item[0]);
-      if (el) el.className = 'seg' + (item[1] ? ' done' : '');
-      if (item[1]) doneCount += 1;
-    });
-
-    var countEl = document.getElementById('progressCount');
-    if (countEl) countEl.textContent = doneCount + ' of 4 done';
-
-    var connCount = (fbDone ? 1 : 0) + (ggDone ? 1 : 0) + (tgDone ? 1 : 0);
-    var summaryEl = document.getElementById('statusSummary');
-    if (summaryEl) {
-      if (connCount === 3) {
-        summaryEl.textContent =
-          'All three connected. Your bot is live: it can now answer patients and take bookings on your Page.';
-        summaryEl.className = 'status-summary show';
-      } else if (connCount > 0) {
-        summaryEl.textContent =
-          'Connected so far: ' + connCount +
-          ' of 3. The bot starts answering once Facebook and Google are both connected. Telegram can be linked anytime for booking alerts.';
-        summaryEl.className = 'status-summary show';
-      } else {
-        summaryEl.textContent = '';
-        summaryEl.className = 'status-summary';
-      }
-    }
-  }
-
-  function render() {
-    var map = {
-      facebook: ['card-facebook', 'st-facebook', 'dot-facebook', 'Connect Facebook Page', 'Reconnect Facebook Page'],
-      google: ['card-google', 'st-google', 'dot-google', 'Connect Google', 'Reconnect Google'],
-      telegram: ['card-telegram', 'st-telegram', 'dot-telegram', 'Connect Telegram', 'Relink Telegram']
-    };
-    Object.keys(map).forEach(function (key) {
-      var s = state[key];
-      var cardId = map[key][0];
-      var stId = map[key][1];
-      var dotId = map[key][2];
-      var btn = document.querySelector('#' + cardId + ' [data-connect]');
-
-      if (s === 'connected') {
-        var detail = getConnectedDetail(key);
-        pill(cardId, 'Connected', 'linked');
-        statusLine(stId, dotId, detail ? 'Connected (' + detail + ')' : 'Connected', 'linked');
-        if (btn) btn.textContent = map[key][4];
-      } else if (s === 'setup_pending' || s === 'storage_pending') {
-        pill(cardId, 'Not ready yet', 'pending');
-        statusLine(stId, dotId, 'Not ready yet. This part is on us, not on you.', 'pending');
-        if (btn) btn.textContent = map[key][3];
-      } else if (s === 'ready') {
-        pill(cardId, 'Not connected', 'ready');
-        statusLine(stId, dotId, 'Not connected', '');
-        if (btn) btn.textContent = map[key][3];
-      } else if (s === 'code_sent') {
-        pill(cardId, 'Waiting for Telegram', 'ready');
-        statusLine(stId, dotId, 'Link sent. Tap Start in Telegram to finish.', '');
-        if (btn) btn.textContent = map[key][3];
-      } else if (s === 'unavailable') {
-        pill(cardId, 'Status unavailable', 'pending');
-        statusLine(stId, dotId, 'Status unavailable', 'pending');
-      } else {
-        pill(cardId, 'Checking status', 'checking');
-        statusLine(stId, dotId, 'Checking', '');
-      }
-    });
-
-    updateProgressBar();
-  }
-
-  function syncCardMessagesFromClinic(clinic) {
-    if (!clinic || !clinic.connections) return;
-    var fb = clinic.connections.facebook || {};
-    var gg = clinic.connections.google || {};
-    var tg = clinic.connections.telegram || {};
-
-    if (fb.connected) {
-      cardMsg(
-        'card-facebook',
-        'Connected to ' + (fb.page_name || fb.page_id) + '. The bot can now read and reply to messages on this Page.'
-      );
-    }
-    if (gg.connected) {
-      var who = gg.email || 'your Google account';
-      if (gg.spreadsheet_url) {
-        cardMsg('card-google', 'Linked ' + who + '.', gg.spreadsheet_url, 'Open clinic Google Sheet');
-      } else if (gg.has_spreadsheet) {
-        cardMsg('card-google', 'Linked Google account with your booking sheet.');
-      } else {
-        cardMsg(
-          'card-google',
-          'Linked ' + who + '. We could not find your booking sheet yet. Paste an existing sheet link in your profile above, or reconnect Google so we can create one.'
-        );
-      }
-    }
-    if (tg.connected) {
-      var box = document.querySelector('#card-telegram [data-tgbox]');
-      if (box) {
-        box.className = 'tgcode';
-        box.setAttribute('aria-hidden', 'true');
-      }
-      var tgName = tg.username ? '@' + tg.username : (tg.first_name || tg.chat_id_masked || 'Telegram chat');
-      cardMsg('card-telegram', 'Booking alerts linked to ' + tgName + '.');
-    }
-  }
-
-  function updateReturnBanner(clinic) {
-    var banner = document.getElementById('returnBanner');
-    if (!banner || !clinic || !clinic.connections) return;
-    var params;
-    try {
-      params = new URLSearchParams(window.location.search);
-    } catch (e) {
-      return;
-    }
-    var connectedParam = params.get('connected');
-    if (!connectedParam) return;
-
-    var conns = clinic.connections;
-    var allThree = Boolean(
-      conns.facebook && conns.facebook.connected &&
-      conns.google && conns.google.connected &&
-      conns.telegram && conns.telegram.connected
-    );
-
-    banner.className = 'return-banner';
-    if (allThree) {
-      banner.textContent =
-        'All three connected. Your bot is live: it can now answer patients and take bookings on your Page.';
-      banner.className = 'return-banner show';
-    } else if (connectedParam === 'facebook' && conns.facebook && conns.facebook.connected) {
-      banner.textContent =
-        'Facebook connected. Your clinic Page is linked. Next: connect Google so bookings have a place to be written.';
-      banner.className = 'return-banner show';
-    } else if (connectedParam === 'google' && conns.google && conns.google.connected) {
-      if (params.get('sheet_warning') === '1') {
-        banner.textContent =
-          'Google connected, but we could not create your booking sheet yet. Paste an existing sheet link in your clinic profile above, or reconnect Google to try again.';
-        banner.className = 'return-banner warn show';
-      } else {
-        banner.textContent =
-          'Google connected. Your booking sheet and calendar are ready. Next: link Telegram so you hear about every booking right away.';
-        banner.className = 'return-banner show';
-      }
-    }
-  }
-
-  function hydrateProfileForm(clinic, storageConfigured) {
-    var profile = (clinic && clinic.profile) || {};
-    var sheetInput = document.getElementById('clinicSheetId');
-    var googleConn = clinic && clinic.connections && clinic.connections.google;
-
-    if (profile.name && !document.getElementById('clinicName').value) {
-      document.getElementById('clinicName').value = profile.name;
-    }
-    if (profile.address && !document.getElementById('clinicAddress').value) {
-      document.getElementById('clinicAddress').value = profile.address;
-    }
-    if (profile.hours && !document.getElementById('clinicHours').value) {
-      document.getElementById('clinicHours').value = profile.hours;
-    }
-    if (sheetInput && googleConn && googleConn.spreadsheet_id && !sheetInput.value) {
-      sheetInput.value = googleConn.spreadsheet_id;
-    }
-
-    var note = document.getElementById('profileNote');
-    if (typeof navigator !== 'undefined' && navigator.cookieEnabled === false) {
-      note.textContent =
-        'Browser cookies are required to save your clinic profile. Please enable cookies for this site and reload.';
-      return;
-    }
-    if (!storageConfigured) {
-      note.textContent =
-        'Your details are saved in this browser for now. Server saving is not switched on yet, so please use this same browser until it is.';
-    } else if (profile.name || profile.address || profile.hours) {
-      note.textContent = 'Loaded from your clinic record on the server.';
-    } else {
-      note.textContent = 'Fill in your details, then click Save clinic profile.';
-    }
-  }
-
-  function loadStatus() {
-    Promise.all([
-      fetchWithTimeout('/api/health', {}, 8000).then(function (r) { return r.json(); }),
-      fetchWithTimeout('/api/clinic', {}, 8000).then(function (r) { return r.json(); })
-    ])
-      .then(function (results) {
-        var h = results[0];
-        var clinic = results[1];
-        if (!h || h.status !== 'ok' || !clinic || !clinic.ready) {
-          throw new Error('Invalid status response');
-        }
-        serverData.health = h;
-        serverData.clinic = clinic;
-
-        var ready = clinic.ready;
-        var storageOk = Boolean(ready.storage);
-        var conns = clinic.connections || {};
-
-        ['facebook', 'google', 'telegram'].forEach(function (key) {
-          if (!ready[key]) {
-            state[key] = 'setup_pending';
-          } else if (!storageOk) {
-            state[key] = 'storage_pending';
-          } else if (conns[key] && conns[key].connected) {
-            state[key] = 'connected';
-          } else if (state[key] !== 'code_sent') {
-            state[key] = 'ready';
-          }
-        });
-
-        render();
-        syncCardMessagesFromClinic(clinic);
-        updateReturnBanner(clinic);
-        hydrateProfileForm(clinic, storageOk);
-
-        if (state.telegram === 'connected' && tgPollTimer) {
-          clearInterval(tgPollTimer);
-          tgPollTimer = null;
-        }
-
-        var pending = ['facebook', 'google', 'telegram'].filter(function (k) {
-          return state[k] === 'setup_pending';
-        });
-        if (!storageOk) {
-          document.getElementById('statusNote').textContent =
-            'Our server storage is not switched on yet, so connections cannot be saved. There is nothing wrong on your side; please check back shortly.';
-        } else if (pending.length) {
-          document.getElementById('statusNote').textContent =
-            'One or more steps are still being switched on by us. Your part is done; there is nothing for you to fix.';
-        } else {
-          document.getElementById('statusNote').textContent =
-            'Everything on our side is switched on. Use the buttons above to connect or update your accounts.';
-        }
-      })
-      .catch(function () {
-        state.facebook = state.google = state.telegram = 'unavailable';
-        render();
-        document.getElementById('statusNote').textContent =
-          'The status service did not answer, so connection states cannot be confirmed right now.';
-      });
-  }
-
-  function startOAuth(provider, cardId) {
-    var btn = document.querySelector('#' + cardId + ' [data-connect]');
-    btn.disabled = true;
-    fetchWithTimeout('/api/connect/' + provider, {}, 8000)
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        btn.disabled = false;
-        if (data.status === 'ready' && data.oauth_url) {
-          cardMsg(cardId, 'Opening the sign in page for your own account.');
-          window.location.href = data.oauth_url;
-        } else {
-          state[provider] = 'setup_pending';
-          render();
-          cardMsg(
-            cardId,
-            data.message ||
-              'This step is not switched on yet on our side. Your account is safe and there is nothing for you to fix. Please check back shortly.'
-          );
-        }
-      })
-      .catch(function () {
-        btn.disabled = false;
-        cardMsg(cardId, 'The server did not answer. Please try again in a moment.');
-      });
-  }
-
-  function startTelegram() {
-    var cardId = 'card-telegram';
-    var btn = document.querySelector('#' + cardId + ' [data-connect]');
-    btn.disabled = true;
-    fetchWithTimeout('/api/connect/telegram', {}, 8000)
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        btn.disabled = false;
-        if (data.status === 'ready') {
-          state.telegram = 'code_sent';
-          render();
-          var box = document.querySelector('#' + cardId + ' [data-tgbox]');
-          document.querySelector('#' + cardId + ' [data-tgcode]').textContent = data.linking_code;
-          var tgText = document.querySelector('#' + cardId + ' [data-tgtext]');
-          tgText.textContent = '';
-          tgText.appendChild(document.createTextNode('Open '));
-          var link = document.createElement('a');
-          link.href = data.bot_link;
-          link.target = '_blank';
-          link.rel = 'noopener';
-          link.textContent = 'the ClinicFlow bot';
-          tgText.appendChild(link);
-          tgText.appendChild(
-            document.createTextNode(' and tap Start (or send /start ' + data.linking_code + '). Expires in 10 minutes.')
-          );
-          box.className = 'tgcode show';
-          box.setAttribute('aria-hidden', 'false');
-          cardMsg(cardId, 'Waiting for you to tap Start in Telegram. This page updates by itself once you do.');
-
-          if (tgPollTimer) clearInterval(tgPollTimer);
-          var attempts = 0;
-          tgPollTimer = setInterval(function () {
-            attempts += 1;
-            if (attempts > 30) {
-              clearInterval(tgPollTimer);
-              tgPollTimer = null;
-              return;
-            }
-            loadStatus();
-          }, 4000);
-        } else {
-          state.telegram = 'setup_pending';
-          render();
-          cardMsg(
-            cardId,
-            data.message ||
-              'This step is not switched on yet on our side. Your account is safe and there is nothing for you to fix. Please check back shortly.'
-          );
-        }
-      })
-      .catch(function () {
-        btn.disabled = false;
-        cardMsg(cardId, 'The server did not answer. Please try again in a moment.');
-      });
-  }
-
-  document.querySelector('[data-connect="facebook"]').addEventListener('click', function () {
-    startOAuth('facebook', 'card-facebook');
-  });
-  document.querySelector('[data-connect="google"]').addEventListener('click', function () {
-    startOAuth('google', 'card-google');
-  });
-  document.querySelector('[data-connect="telegram"]').addEventListener('click', startTelegram);
-
-  var fields = { clinicName: 'name', clinicAddress: 'address', clinicHours: 'hours', clinicSheetId: 'spreadsheet_id' };
+  // Arriving from /dashboard without a login: show the prompt banner.
   try {
-    var saved = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}');
-    Object.keys(fields).forEach(function (id) {
-      var input = document.getElementById(id);
-      if (input && saved[fields[id]]) input.value = saved[fields[id]];
-      if (input) {
-        input.addEventListener('input', function () {
-          var data = {};
-          Object.keys(fields).forEach(function (f) {
-            data[fields[f]] = document.getElementById(f).value;
-          });
-          localStorage.setItem(PROFILE_KEY, JSON.stringify(data));
-          var storageOk = Boolean(
-            serverData.clinic && serverData.clinic.ready && serverData.clinic.ready.storage
-          );
-          document.getElementById('profileNote').textContent = storageOk
-            ? 'You have unsaved changes. Click Save clinic profile to keep them.'
-            : 'Your details are saved in this browser for now. Server saving is not switched on yet, so please use this same browser until it is.';
-        });
-      }
-    });
-  } catch (e) { /* localStorage unavailable; form still works as a plain form */ }
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('login') === '1') {
+      showLoginBanner('Log in with Google to open your dashboard.');
+    }
+  } catch (e) { /* banner stays hidden */ }
 
-  document.getElementById('profileForm').addEventListener('submit', function (e) {
-    e.preventDefault();
-    var btn = document.getElementById('saveProfileBtn');
-    var note = document.getElementById('profileNote');
-    var payload = {};
-    Object.keys(fields).forEach(function (id) {
-      payload[fields[id]] = document.getElementById(id).value;
-    });
-    btn.disabled = true;
-    fetchWithTimeout('/api/clinic', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }, 8000)
-      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
-      .then(function (res) {
-        btn.disabled = false;
-        if (res.ok && res.data.status === 'saved') {
-          note.textContent = 'Saved to your clinic record on the server.';
-          loadStatus();
-        } else if (res.data && res.data.code === 'COOKIES_REQUIRED') {
-          note.textContent =
-            'Browser cookies are required to save your clinic profile. Please enable cookies and reload the page.';
-        } else {
-          note.textContent =
-            (res.data && res.data.message) ||
-            'Could not save just now. Your details are kept in this browser; please try again in a moment.';
+  // Log in and pilot CTAs both start the Google sign in flow. The connect
+  // endpoint returns the OAuth URL as JSON, so fetch it and then navigate.
+  var loginBusy = false;
+  function startLogin() {
+    if (loginBusy) return;
+    loginBusy = true;
+    var buttons = document.querySelectorAll('[data-login]');
+    buttons.forEach(function (b) { b.disabled = true; });
+    fetchWithTimeout('/api/connect/google', {}, 8000)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.status === 'ready' && data.oauth_url) {
+          window.location.href = data.oauth_url;
+          return;
         }
+        loginBusy = false;
+        buttons.forEach(function (b) { b.disabled = false; });
+        showLoginBanner(
+          data.message ||
+            'This step is not switched on yet on our side. Your account is safe and there is nothing for you to fix. Please check back shortly.'
+        );
       })
       .catch(function () {
-        btn.disabled = false;
-        note.textContent =
-          'Could not save just now. Your details are kept in this browser; please try again in a moment.';
+        loginBusy = false;
+        buttons.forEach(function (b) { b.disabled = false; });
+        showLoginBanner('The server did not answer. Please try again in a moment.');
       });
+  }
+  document.querySelectorAll('[data-login]').forEach(function (btn) {
+    btn.addEventListener('click', startLogin);
   });
-
-  render();
-  loadStatus();
 })();
 </script>
 </body>

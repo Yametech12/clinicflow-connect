@@ -1,11 +1,14 @@
 # ClinicFlow Connect v1
 
 The connect website and multi-tenant serverless engine for ClinicFlow PH, the
-Messenger front desk for Philippine dental clinics. A clinic owner opens
-this page, fills in their clinic profile, and links their own Facebook Page,
-Google account (Sheet + Calendar), and Telegram chat. Nothing pretends to
-work when credentials or storage are missing: unconfigured steps honestly
-report pending setup in plain language.
+Messenger front desk for Philippine dental clinics. The public landing page
+(`/`) explains the offer and runs the sample demo; the client area lives at
+`/dashboard` behind Google login. A clinic owner logs in with Google (the
+same Google connect the product needs anyway), fills in their clinic
+profile, and links their own Facebook Page, Google account (Sheet +
+Calendar), and Telegram chat. Nothing pretends to work when credentials or
+storage are missing: unconfigured steps honestly report pending setup in
+plain language.
 
 ## Architecture
 
@@ -50,9 +53,14 @@ services (Upstash free tier) and zero npm dependencies (uses Node built-in
   - `clinic:<clinicId>:meta`: `keyHash` (SHA256 of `cf_key` cookie), timestamps.
   - `clinic:<clinicId>:profile`: name, address, hours, timezone.
   - `clinic:<clinicId>:facebook`: Page ID, Page name, Page token, subscription.
-  - `clinic:<clinicId>:google`: email, access token, refresh token, Sheet ID.
+  - `clinic:<clinicId>:google`: email, Google account `googleSub`, access
+    token, refresh token, Sheet ID.
   - `clinic:<clinicId>:telegram`: chat ID, username, first name.
 - Lookup, safety, and state keys:
+  - `clinicByGoogleSub:<sub>`: `{ clinicId }` login identity index. On Google
+    login the callback looks the account up here: a hit adopts that clinic
+    record (session cookies switch to it, write key rotated); a miss binds
+    the account to the clinic carried by the OAuth state.
   - `fb_page:<pageId>`: `{ clinicId }` lookup index for incoming webhooks.
   - `fb_pending:<selectionToken>`: 10-min temporary Page list for multi-Page accounts.
   - `state:<nonce>`: 30-min single-use OAuth state marker.
@@ -64,29 +72,52 @@ services (Upstash free tier) and zero npm dependencies (uses Node built-in
 
 ## Files
 
-- `index.html`: landing and connect page. Includes sticky 4-step progress bar,
-  live front-end sample price demo, dark color scheme, 48px touch targets,
-  8000ms fetch timeouts, return banners, pilot pricing strip, and plain-language
-  status copy.
+- `index.html`: public landing page. Hero, live front-end sample price demo,
+  how-it-works sequence, pilot pricing strip, and Log in / Start a pilot
+  buttons that start the Google sign in flow. No clinic data lives here;
+  arriving with `?login=1` shows the login prompt banner.
+- `dashboard.html`: the client area at `/dashboard` (served via `cleanUrls`).
+  The page stays hidden until `GET /api/clinic` reports `logged_in: true`
+  (a clinic session bound to a Google account); otherwise it redirects to
+  `/?login=1`. Contains the sticky 4-step progress bar, signed-in email and
+  Log out, clinic profile form, the three connect cards with safety lines
+  and pills, return banners, pilot state line, connection status box, and
+  the Recent bookings panel fed by `api/bookings.js`.
 - `api/_store.js`: swappable KV storage layer (`get`, `put`, `putIfAbsent`,
   `del`, `isConfigured`, `getBackendInfo`).
-- `api/_clinic.js`: per-section clinic read/write helpers and legacy migration.
+- `api/_clinic.js`: per-section clinic read/write helpers, legacy migration,
+  and the `clinicByGoogleSub:<sub>` login identity index helpers.
 - `api/_session.js`: `cf_clinic` + `cf_key` HttpOnly cookies, HMAC-signed
   single-use OAuth `state`, `PUBLIC_BASE_URL` origin pinning, correlation-ID
   server error logging, and response helpers.
 - `api/_google.js`: Google OAuth code exchange + section-safe `refresh_token`
-  renewal, Sheet provisioning (`FAQ_Prices`, `Leads_Bookings`, `System_Logs`),
-  capped FAQ loader, lead row writer, and Calendar event creation.
+  renewal, userinfo (`email` + `sub`) for login identity, Sheet provisioning
+  (`FAQ_Prices`, `Leads_Bookings`, `System_Logs`), capped FAQ loader, lead row
+  writer, read-only recent-bookings reader, and Calendar event creation.
 - `api/_pipeline.js`: message pipeline ported from `../clinicflow/Code.gs`.
 - `api/health.js`: GET. Publicly returns `{ status: "ok" }`. Detailed env-var
   booleans require `x-admin-probe` header matching `ADMIN_PROBE_TOKEN`.
 - `api/clinic.js`: GET/POST. Cookie-authenticated clinic profile and connection
   summary (redacts `email` and `spreadsheet_url` if `cf_key` is absent; rejects
-  POST without valid `cf_key` with 403).
+  POST without valid `cf_key` with 403). GET also reports `logged_in` (the
+  clinic record is bound to a Google account) and `connections.google.bound`.
+- `api/bookings.js`: GET. Recent bookings for the dashboard: requires a
+  Google-bound clinic session (401 `login_required` otherwise), reads the
+  last 10 `Leads_Bookings` rows from the clinic's own Sheet with its stored
+  Google credentials (refreshing when needed), and reports honest `ok`,
+  `no_sheet`, or `google_unavailable` states. Read-only.
+- `api/logout.js`: GET. Expires the `cf_clinic` and `cf_key` cookies and
+  redirects to `/`.
 - `api/connect/facebook.js`, `api/connect/google.js`, `api/connect/telegram.js`:
   connect starters returning signed OAuth URLs or deep links (`https://t.me/<bot>?start=<code>`).
+  The Google starter requests `openid` plus `userinfo.email`/`userinfo.profile`
+  on top of the Sheets and Calendar scopes, so the same flow is the login.
 - `api/callback/facebook.js`, `api/callback/google.js`: real OAuth callbacks
-  with single-use state enforcement and correlation-ID error pages.
+  with single-use state enforcement and correlation-ID error pages. Both
+  redirect to `/dashboard` on success. The Google callback captures the
+  userinfo `sub`, binds or adopts the clinic record for that Google account
+  (see the `clinicByGoogleSub:<sub>` index above), then provisions the Sheet
+  on the effective record.
 - `api/webhook.js`: disables `bodyParser`, verifies Meta `X-Hub-Signature-256`
   over raw bytes (403 fail-closed when `META_APP_SECRET` is set), handles Meta
   GET verification, processes Messenger events, and handles Telegram `/start`

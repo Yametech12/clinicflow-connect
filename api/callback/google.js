@@ -19,7 +19,7 @@ const {
 } = require('../_session');
 const {
   exchangeGoogleCode,
-  fetchGoogleUserEmail,
+  fetchGoogleUserInfo,
   createClinicSpreadsheet,
 } = require('../_google');
 
@@ -54,6 +54,23 @@ async function ensureMetaRecordOnCallback(req, res, clinicId) {
     return;
   }
 
+  const nowIso = new Date().toISOString();
+  const newKey = createClinicKey();
+  await clinicStore.saveClinicSection(store, clinicId, 'meta', {
+    clinicId,
+    keyHash: hashClinicKey(newKey),
+    createdAt: (existingMeta && existingMeta.createdAt) || nowIso,
+    updatedAt: nowIso,
+  });
+  setClinicCookie(req, res, clinicId);
+  setClinicKeyCookie(req, res, newKey);
+}
+
+// Adoption: the browser's cookies point at a different clinic record than the
+// one this Google account owns. Point the session at the owned record and
+// rotate its write key, because the browser cannot know the record's old key.
+async function adoptClinicSession(req, res, clinicId) {
+  const existingMeta = await clinicStore.getClinicSection(store, clinicId, 'meta');
   const nowIso = new Date().toISOString();
   const newKey = createClinicKey();
   await clinicStore.saveClinicSection(store, clinicId, 'meta', {
@@ -144,15 +161,47 @@ module.exports = async (req, res) => {
     }
 
     let email = null;
+    let googleSub = null;
     try {
-      email = await fetchGoogleUserEmail(tokenData.access_token);
-    } catch (emailErr) {
-      logServerError('google_userinfo', emailErr);
+      const info = await fetchGoogleUserInfo(tokenData.access_token);
+      email = info.email;
+      googleSub = info.sub;
+    } catch (infoErr) {
+      logServerError('google_userinfo', infoErr);
+    }
+
+    // Login identity: a Google account owns exactly one clinic record. If
+    // this account was bound before, adopt that record; otherwise bind the
+    // account to the clinic carried by the OAuth state.
+    const stateClinicId = clinicId;
+    let effectiveClinicId = stateClinicId;
+    if (googleSub) {
+      const indexedClinicId = await clinicStore.getClinicIdByGoogleSub(store, googleSub);
+      if (indexedClinicId) {
+        effectiveClinicId = indexedClinicId;
+      }
+    }
+    const adopted = effectiveClinicId !== stateClinicId;
+
+    if (adopted) {
+      // Carry over connections the browser-side clinic already made (profile,
+      // Facebook Page, Telegram) when the adopted record does not have them
+      // yet, so adopting never silently drops a working connection.
+      for (const section of ['profile', 'facebook', 'telegram']) {
+        const targetSection = await clinicStore.getClinicSection(store, effectiveClinicId, section);
+        if (targetSection) continue;
+        const sourceSection = await clinicStore.getClinicSection(store, stateClinicId, section);
+        if (!sourceSection) continue;
+        await clinicStore.saveClinicSection(store, effectiveClinicId, section, sourceSection);
+        if (section === 'facebook' && sourceSection.pageId) {
+          await store.put(`fb_page:${sourceSection.pageId}`, { clinicId: effectiveClinicId });
+        }
+      }
     }
 
     const [prevGoogle, prevProfile] = await Promise.all([
-      clinicStore.getClinicSection(store, clinicId, 'google'),
-      clinicStore.getClinicSection(store, clinicId, 'profile'),
+      clinicStore.getClinicSection(store, effectiveClinicId, 'google'),
+      clinicStore.getClinicSection(store, effectiveClinicId, 'profile'),
     ]);
     const baseGoogle = prevGoogle || {};
 
@@ -177,6 +226,7 @@ module.exports = async (req, res) => {
     const nowIso = new Date().toISOString();
     const nextGoogle = {
       email: email || baseGoogle.email || null,
+      googleSub: googleSub || baseGoogle.googleSub || null,
       accessToken: tokenData.access_token,
       refreshToken: tokenData.refresh_token || baseGoogle.refreshToken || null,
       expiresAt: Date.now() + (Number(tokenData.expires_in) || 3600) * 1000,
@@ -186,17 +236,30 @@ module.exports = async (req, res) => {
       connectedAt: nowIso,
     };
 
-    await clinicStore.saveClinicSection(store, clinicId, 'google', nextGoogle);
-    await ensureMetaRecordOnCallback(req, res, clinicId);
+    await clinicStore.saveClinicSection(store, effectiveClinicId, 'google', nextGoogle);
+
+    if (googleSub) {
+      if (baseGoogle.googleSub && baseGoogle.googleSub !== googleSub) {
+        await clinicStore.unbindGoogleSub(store, baseGoogle.googleSub, effectiveClinicId);
+      }
+      await clinicStore.bindGoogleSub(store, googleSub, effectiveClinicId);
+    }
+
+    if (adopted) {
+      await adoptClinicSession(req, res, effectiveClinicId);
+    } else {
+      await ensureMetaRecordOnCallback(req, res, effectiveClinicId);
+    }
 
     if (isHtml) {
       const qs = sheetWarning ? '?connected=google&sheet_warning=1' : '?connected=google';
-      return redirect(res, `/${qs}`);
+      return redirect(res, `/dashboard${qs}`);
     }
 
     return res.status(200).json({
       status: 'connected',
       provider: 'google',
+      clinic_id: effectiveClinicId,
       email: nextGoogle.email,
       has_refresh_token: Boolean(nextGoogle.refreshToken),
       spreadsheet_id: nextGoogle.spreadsheetId,

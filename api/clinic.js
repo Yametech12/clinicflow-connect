@@ -37,6 +37,7 @@ module.exports = async (req, res) => {
         status: 'storage_pending',
         storage_configured: false,
         session_issued: session.sessionIssued,
+        logged_in: false,
         ready,
         ...sanitizeClinicSummary({ clinicId: session.clinicId }, { includeSensitive: false }),
       });
@@ -51,6 +52,7 @@ module.exports = async (req, res) => {
         storage_configured: true,
         session_issued: session.sessionIssued,
         authenticated: includeSensitive,
+        logged_in: Boolean(clinic && clinic.google && clinic.google.googleSub),
         ready,
         ...sanitizeClinicSummary(clinic || { clinicId: session.clinicId }, { includeSensitive }),
       });

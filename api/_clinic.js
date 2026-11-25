@@ -98,11 +98,41 @@ async function saveClinicSection(store, clinicId, section, data) {
   return data;
 }
 
+// Google identity index: maps a Google account (userinfo `sub`) to the clinic
+// record that account owns, so a returning clinic that logs in with Google
+// lands on its existing record instead of a fresh anonymous one.
+function googleSubIndexKey(sub) {
+  return `clinicByGoogleSub:${sub}`;
+}
+
+async function getClinicIdByGoogleSub(store, sub) {
+  if (!store || !sub) return null;
+  const record = await store.get(googleSubIndexKey(String(sub)));
+  return record && record.clinicId ? record.clinicId : null;
+}
+
+async function bindGoogleSub(store, sub, clinicId) {
+  if (!store || !sub || !clinicId) return;
+  await store.put(googleSubIndexKey(String(sub)), { clinicId });
+}
+
+async function unbindGoogleSub(store, sub, clinicId) {
+  if (!store || !sub) return;
+  const record = await store.get(googleSubIndexKey(String(sub)));
+  if (record && record.clinicId === clinicId) {
+    await store.del(googleSubIndexKey(String(sub)));
+  }
+}
+
 module.exports = {
   SECTIONS,
   sectionKey,
+  googleSubIndexKey,
   getClinic,
   getClinicSection,
   saveClinicSection,
   migrateLegacyClinicIfNeeded,
+  getClinicIdByGoogleSub,
+  bindGoogleSub,
+  unbindGoogleSub,
 };

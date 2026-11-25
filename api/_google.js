@@ -199,6 +199,19 @@ async function fetchGoogleUserEmail(accessToken) {
   return data && data.email ? String(data.email) : null;
 }
 
+// Full userinfo for login identity: the stable Google account id (`sub`,
+// present when the openid scope is granted) plus the account email.
+async function fetchGoogleUserInfo(accessToken) {
+  const data = await googleFetchJson('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!data) return { email: null, sub: null };
+  return {
+    email: data.email ? String(data.email) : null,
+    sub: data.sub ? String(data.sub) : data.id ? String(data.id) : null,
+  };
+}
+
 async function getValidGoogleAccessToken(clinicId, clinic, store) {
   const google = clinic && clinic.google;
   if (!google || (!google.accessToken && !google.refreshToken)) {
@@ -433,6 +446,37 @@ async function appendSheetRowWithTabFallback(accessToken, spreadsheetId, tabName
   }
 }
 
+// Read-only: the most recent rows of Leads_Bookings for the clinic dashboard.
+// Returns at most `limit` bookings, newest first, mapped to panel fields.
+// Never invents rows: an empty sheet returns an empty array.
+async function readRecentBookings(accessToken, spreadsheetId, limit = 10) {
+  if (!accessToken || !spreadsheetId) return [];
+  const range = encodeURIComponent(`${SHEETS.LEADS}!A2:J`);
+  const data = await googleFetchJson(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+      spreadsheetId
+    )}/values/${range}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+
+  const rows = Array.isArray(data.values) ? data.values : [];
+  const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 10;
+  return rows
+    .filter((row) => Array.isArray(row) && row.some((cell) => String(cell || '').trim() !== ''))
+    .slice(-cap)
+    .reverse()
+    .map((row) => ({
+      timestamp: String(row[0] || ''),
+      patient_name: String(row[2] || ''),
+      mobile_number: String(row[3] || ''),
+      service: String(row[4] || ''),
+      preferred_datetime: String(row[5] || ''),
+      status: String(row[7] || ''),
+    }));
+}
+
 async function appendLeadRow(accessToken, spreadsheetId, { senderId, booking, eventId }) {
   const row = [
     getManilaTimestamp(),
@@ -552,6 +596,8 @@ module.exports = {
   exchangeGoogleCode,
   refreshGoogleToken,
   fetchGoogleUserEmail,
+  fetchGoogleUserInfo,
+  readRecentBookings,
   getValidGoogleAccessToken,
   createClinicSpreadsheet,
   loadFaqPrices,

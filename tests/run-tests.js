@@ -65,11 +65,15 @@ const clinicHandler = require('../api/clinic');
 const healthHandler = require('../api/health');
 const connectTelegram = require('../api/connect/telegram');
 const callbackGoogle = require('../api/callback/google');
+const logoutHandler = require('../api/logout');
+const bookingsHandler = require('../api/bookings');
 
 // --- fetch mock ---
 const fetchLog = [];
 let geminiBehavior = { mode: 'ok', payload: null };
 let googleWriteBehavior = { calendar: 'ok', leads: 'ok', logs: 'ok' };
+let googleTokenBehavior = { mode: 'ok' };
+let userinfoBehavior = { sub: 'sub_owner_1', email: 'clinic.owner@example.com' };
 
 function jsonResponse(status, obj) {
   const text = typeof obj === 'string' ? obj : JSON.stringify(obj);
@@ -106,6 +110,9 @@ global.fetch = async (url, options = {}) => {
     return jsonResponse(200, { recipient_id: 'x', message_id: 'm' });
   }
   if (u.includes('oauth2.googleapis.com/token')) {
+    if (googleTokenBehavior.mode === 'fail') {
+      return jsonResponse(500, { error: { message: 'mock token endpoint failure' } });
+    }
     return jsonResponse(200, {
       access_token: 'ya29.mock_access',
       refresh_token: 'mock_refresh_new',
@@ -113,7 +120,7 @@ global.fetch = async (url, options = {}) => {
     });
   }
   if (u.includes('oauth2/v2/userinfo')) {
-    return jsonResponse(200, { email: 'clinic.owner@example.com' });
+    return jsonResponse(200, { email: userinfoBehavior.email, sub: userinfoBehavior.sub });
   }
   if (/sheets\.googleapis\.com\/v4\/spreadsheets\/?$/.test(u) && options.method === 'POST') {
     return jsonResponse(200, {
@@ -133,6 +140,10 @@ global.fetch = async (url, options = {}) => {
     return jsonResponse(200, { updates: { updatedRows: 1 } });
   }
   if (u.includes('sheets.googleapis.com') && u.includes('/values/')) {
+    if (u.includes('Leads_Bookings')) {
+      // Bookings read: rows controlled by leadRows global
+      return jsonResponse(200, { values: global.__leadRows || [] });
+    }
     // FAQ read: rows controlled by faqRows global
     return jsonResponse(200, { values: global.__faqRows || [] });
   }
@@ -279,7 +290,10 @@ async function test(name, fn) {
   fetchLog.length = 0;
   geminiBehavior = { mode: 'ok', payload: null };
   googleWriteBehavior = { calendar: 'ok', leads: 'ok', logs: 'ok' };
+  googleTokenBehavior = { mode: 'ok' };
+  userinfoBehavior = { sub: 'sub_owner_1', email: 'clinic.owner@example.com' };
   global.__faqRows = [];
+  global.__leadRows = [];
   try {
     await fn();
     results.push(['PASS', name]);
@@ -699,6 +713,195 @@ function assertEq(a, b, msg) {
     }
     s = await postTg(tgUpdate(555999, '/start ZZZZZ9'), 'test_tg_webhook_secret');
     assertEq(s.body.status, 'rate_limited', 'sixth bad attempt rate limited');
+  });
+
+  // 20. GT-135: first Google login binds the account sub to the cookie clinic
+  await test('google login: first login binds sub to state clinic, index written, redirect to /dashboard', async () => {
+    userinfoBehavior.sub = 'sub_first_login';
+    const clinicId = session.createClinicId();
+    const state = session.signState(clinicId, 'google', process.env.GOOGLE_CLIENT_SECRET);
+    const res = makeRes();
+    await callbackGoogle(
+      makeReq({
+        query: { code: 'mock_code', state },
+        headers: { accept: 'text/html', host: 'clinicflow-connect-two.vercel.app', 'x-forwarded-proto': 'https' },
+      }),
+      res
+    );
+    assertEq(res.statusCode, 302, 'callback redirects');
+    assertEq(res.headers.location, '/dashboard?connected=google', 'redirect lands on dashboard');
+    const googleSection = await clinicStore.getClinicSection(store, clinicId, 'google');
+    assertEq(googleSection.googleSub, 'sub_first_login', 'sub stored on google section');
+    assertEq(googleSection.email, 'clinic.owner@example.com', 'email stored');
+    const index = await store.get('clinicByGoogleSub:sub_first_login');
+    assert(index && index.clinicId === clinicId, 'google sub index points at the clinic');
+    const lookedUp = await clinicStore.getClinicIdByGoogleSub(store, 'sub_first_login');
+    assertEq(lookedUp, clinicId, 'index helper resolves the clinic');
+  });
+
+  // 21. GT-135: returning login adopts the record bound to the Google account
+  await test('google login: returning account adopts its bound record and gets a working session', async () => {
+    userinfoBehavior.sub = 'sub_returning';
+    // Clinic A: the record this Google account already owns.
+    const clinicA = session.createClinicId();
+    const keyA = session.createClinicKey();
+    await clinicStore.saveClinicSection(store, clinicA, 'meta', {
+      clinicId: clinicA,
+      keyHash: session.hashClinicKey(keyA),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    await clinicStore.saveClinicSection(store, clinicA, 'google', {
+      email: 'clinic.owner@example.com',
+      googleSub: 'sub_returning',
+      accessToken: 'old_access_token',
+      refreshToken: 'mock_refresh',
+      expiresAt: 0,
+      spreadsheetId: 'sheet_A',
+      spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sheet_A',
+      calendarId: 'primary',
+      connectedAt: new Date().toISOString(),
+    });
+    await clinicStore.bindGoogleSub(store, 'sub_returning', clinicA);
+
+    // Clinic B: a fresh anonymous clinic carried by this login's state.
+    const clinicB = session.createClinicId();
+    const state = session.signState(clinicB, 'google', process.env.GOOGLE_CLIENT_SECRET);
+    const res = makeRes();
+    await callbackGoogle(
+      makeReq({
+        query: { code: 'mock_code', state },
+        headers: { accept: 'text/html', host: 'clinicflow-connect-two.vercel.app', 'x-forwarded-proto': 'https' },
+      }),
+      res
+    );
+    assertEq(res.statusCode, 302, 'adoption callback redirects');
+    assertEq(res.headers.location, '/dashboard?connected=google', 'redirect lands on dashboard');
+    const setCookie = res.headers['set-cookie'];
+    const cookieStr = Array.isArray(setCookie) ? setCookie.join(';') : String(setCookie || '');
+    assert(cookieStr.includes(`cf_clinic=${clinicA}`), 'session cookie switched to the adopted record');
+    const adoptedGoogle = await clinicStore.getClinicSection(store, clinicA, 'google');
+    assertEq(adoptedGoogle.accessToken, 'ya29.mock_access', 'fresh tokens stored on adopted record');
+    assertEq(adoptedGoogle.spreadsheetId, 'sheet_A', 'adopted record keeps its own sheet');
+    const stateGoogle = await clinicStore.getClinicSection(store, clinicB, 'google');
+    assertEq(stateGoogle, null, 'state clinic received no google section');
+
+    // The rotated key issued during adoption can save the adopted record.
+    const issuedKey = decodeURIComponent(cookieStr.match(/cf_key=([^;]+)/)[1]);
+    const saveRes = makeRes();
+    await clinicHandler(
+      makeReq({
+        method: 'POST',
+        headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: `cf_clinic=${clinicA}; cf_key=${issuedKey}` },
+        body: { name: 'Adopted Clinic' },
+      }),
+      saveRes
+    );
+    assertEq(saveRes.statusCode, 200, 'adopted session can save profile');
+  });
+
+  // 22. GT-135: dashboard gate signals (logged_in flag + bookings 401)
+  await test('dashboard gate: anonymous and unbound sessions are not logged in; bound session is', async () => {
+    // No cookies at all -> bookings refuses, clinic reports logged_in false
+    let res = makeRes();
+    await bookingsHandler(makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https' } }), res);
+    assertEq(res.statusCode, 401, 'bookings without session is 401');
+    assertEq(res.body.status, 'login_required', 'login_required status');
+
+    // Connected Google but never bound (no googleSub) -> still not logged in
+    const { clinicId, key } = await seedClinic({ withGoogle: true });
+    const cookie = `cf_clinic=${clinicId}; cf_key=${key}`;
+    res = makeRes();
+    await bookingsHandler(makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie } }), res);
+    assertEq(res.statusCode, 401, 'bookings for unbound clinic is 401');
+    res = makeRes();
+    await clinicHandler(makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie } }), res);
+    assertEq(res.body.logged_in, false, 'unbound clinic logged_in false');
+    assertEq(res.body.connections.google.bound, false, 'bound flag false');
+
+    // Bind the sub -> logged in everywhere
+    const googleSection = await clinicStore.getClinicSection(store, clinicId, 'google');
+    await clinicStore.saveClinicSection(store, clinicId, 'google', { ...googleSection, googleSub: 'sub_owner_1' });
+    res = makeRes();
+    await clinicHandler(makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie } }), res);
+    assertEq(res.body.logged_in, true, 'bound clinic logged_in true');
+    assertEq(res.body.connections.google.bound, true, 'bound flag true');
+  });
+
+  // 23. GT-135: logout clears both session cookies and redirects to /
+  await test('logout: clears cf_clinic and cf_key, redirects to landing', async () => {
+    const res = makeRes();
+    await logoutHandler(
+      makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: 'cf_clinic=cln_x; cf_key=abc' } }),
+      res
+    );
+    assertEq(res.statusCode, 302, 'logout redirects');
+    assertEq(res.headers.location, '/', 'logout lands on /');
+    const setCookie = res.headers['set-cookie'];
+    const cookieStr = Array.isArray(setCookie) ? setCookie.join(' | ') : String(setCookie || '');
+    assert(cookieStr.includes('cf_clinic='), 'cf_clinic cleared');
+    assert(cookieStr.includes('cf_key='), 'cf_key cleared');
+    assert((cookieStr.match(/Max-Age=0/g) || []).length >= 2, 'both cookies expired');
+  });
+
+  // 24. GT-135: recent bookings read (rows, empty, no sheet, refresh failure)
+  await test('bookings read: last 10 rows newest first, empty sheet, no_sheet, token refresh failure honest', async () => {
+    const { clinicId, key } = await seedClinic({ withGoogle: true });
+    const googleSection = await clinicStore.getClinicSection(store, clinicId, 'google');
+    await clinicStore.saveClinicSection(store, clinicId, 'google', { ...googleSection, googleSub: 'sub_owner_1' });
+    const cookie = `cf_clinic=${clinicId}; cf_key=${key}`;
+    const getBookings = async () => {
+      const res = makeRes();
+      await bookingsHandler(makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie } }), res);
+      return res;
+    };
+
+    const mkRow = (n) => [
+      `2026-11-25 09:0${n % 10}:00`, 'psid_x', `Patient ${n}`, '09171234567',
+      'Cleaning', `Nov ${n} 2pm`, '', 'CONFIRMED', 'evt', '',
+    ];
+    global.__leadRows = Array.from({ length: 12 }, (_, i) => mkRow(i + 1));
+    let res = await getBookings();
+    assertEq(res.statusCode, 200, 'bookings ok status');
+    assertEq(res.body.status, 'ok', 'bookings status ok');
+    assertEq(res.body.bookings.length, 10, 'capped at 10 rows');
+    assertEq(res.body.bookings[0].patient_name, 'Patient 12', 'newest row first');
+    assertEq(res.body.bookings[9].patient_name, 'Patient 3', 'tenth row is the third oldest kept');
+    assertEq(res.body.bookings[0].status, 'CONFIRMED', 'status column mapped');
+
+    global.__leadRows = [];
+    res = await getBookings();
+    assertEq(res.body.status, 'ok', 'empty sheet still ok');
+    assertEq(res.body.bookings.length, 0, 'empty sheet returns no rows');
+
+    // Expire the stored token again so the next read must attempt a refresh.
+    const freshGoogle = await clinicStore.getClinicSection(store, clinicId, 'google');
+    await clinicStore.saveClinicSection(store, clinicId, 'google', { ...freshGoogle, accessToken: null, expiresAt: 0 });
+    googleTokenBehavior = { mode: 'fail' };
+    global.__leadRows = [mkRow(1)];
+    res = await getBookings();
+    assertEq(res.body.status, 'google_unavailable', 'refresh failure is an honest state');
+    assertEq(res.body.bookings.length, 0, 'no invented rows on failure');
+    googleTokenBehavior = { mode: 'ok' };
+
+    const noSheet = await seedClinic();
+    await clinicStore.saveClinicSection(store, noSheet.clinicId, 'google', {
+      email: 'clinic.owner@example.com',
+      googleSub: 'sub_owner_1',
+      accessToken: 'tok',
+      refreshToken: 'mock_refresh',
+      expiresAt: Date.now() + 3600 * 1000,
+      spreadsheetId: null,
+      spreadsheetUrl: null,
+      calendarId: 'primary',
+      connectedAt: new Date().toISOString(),
+    });
+    res = makeRes();
+    await bookingsHandler(
+      makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: `cf_clinic=${noSheet.clinicId}; cf_key=${noSheet.key}` } }),
+      res
+    );
+    assertEq(res.body.status, 'no_sheet', 'bound clinic without sheet reports no_sheet');
   });
 
   // 19. FAQ cap: 250 rows -> at most 100 items + truncation note
