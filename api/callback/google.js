@@ -1,12 +1,19 @@
 // ClinicFlow Connect: Google OAuth callback.
 // Exchanges the authorization code for access and refresh tokens, stores them
-// on the clinic record, and provisions the clinic Google Sheet if none is linked yet.
+// on the clinic :google section key, and provisions the clinic Sheet if none is linked.
 const store = require('../_store');
+const clinicStore = require('../_clinic');
 const {
-  getRequestOrigin,
+  getOAuthBaseUrl,
+  getClinicIdFromRequest,
+  createClinicKey,
+  hashClinicKey,
   setClinicCookie,
+  setClinicKeyCookie,
   verifyState,
+  consumeSingleUseState,
   wantsHtml,
+  logServerError,
   renderStatusHtml,
   redirect,
 } = require('../_session');
@@ -16,7 +23,8 @@ const {
   createClinicSpreadsheet,
 } = require('../_google');
 
-function sendError(req, res, statusCode, heading, message) {
+function sendError(req, res, statusCode, heading, message, ref) {
+  const finalMsg = ref ? `${message} (Reference: ${ref})` : message;
   if (wantsHtml(req)) {
     res.statusCode = statusCode;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -24,7 +32,7 @@ function sendError(req, res, statusCode, heading, message) {
       renderStatusHtml({
         title: heading,
         heading,
-        message,
+        message: finalMsg,
         tone: 'error',
       })
     );
@@ -32,8 +40,30 @@ function sendError(req, res, statusCode, heading, message) {
   return res.status(statusCode).json({
     status: 'error',
     provider: 'google',
-    message,
+    message: finalMsg,
+    ...(ref ? { ref } : {}),
   });
+}
+
+async function ensureMetaRecordOnCallback(req, res, clinicId) {
+  const existingMeta = await clinicStore.getClinicSection(store, clinicId, 'meta');
+  if (existingMeta && existingMeta.keyHash) {
+    if (getClinicIdFromRequest(req) === clinicId) {
+      setClinicCookie(req, res, clinicId);
+    }
+    return;
+  }
+
+  const nowIso = new Date().toISOString();
+  const newKey = createClinicKey();
+  await clinicStore.saveClinicSection(store, clinicId, 'meta', {
+    clinicId,
+    keyHash: hashClinicKey(newKey),
+    createdAt: (existingMeta && existingMeta.createdAt) || nowIso,
+    updatedAt: nowIso,
+  });
+  setClinicCookie(req, res, clinicId);
+  setClinicKeyCookie(req, res, newKey);
 }
 
 module.exports = async (req, res) => {
@@ -42,20 +72,17 @@ module.exports = async (req, res) => {
   const storageInfo = store.getBackendInfo();
   const isHtml = wantsHtml(req);
 
-  const missing = [];
-  if (!clientId) missing.push('GOOGLE_CLIENT_ID');
-  if (!clientSecret) missing.push('GOOGLE_CLIENT_SECRET');
-  if (!storageInfo.configured) missing.push(...storageInfo.missing);
-
-  if (missing.length > 0) {
-    const msg = `Server setup pending. Missing: ${missing.join(', ')}.`;
+  if (!clientId || !clientSecret || !storageInfo.configured) {
+    const heading = 'This step is not switched on yet';
+    const msg =
+      'This part of ClinicFlow is still being set up on our side. Please go back and try again later. There is nothing wrong with your account.';
     if (isHtml) {
       res.statusCode = 503;
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       return res.end(
         renderStatusHtml({
-          title: 'Setup pending',
-          heading: 'Google connect setup pending',
+          title: heading,
+          heading,
           message: msg,
           tone: 'warn',
         })
@@ -64,7 +91,6 @@ module.exports = async (req, res) => {
     return res.status(503).json({
       status: 'setup_pending',
       provider: 'google',
-      missing,
       message: msg,
     });
   }
@@ -77,7 +103,7 @@ module.exports = async (req, res) => {
         res,
         400,
         'Google sign-in cancelled',
-        String(query.error_description || query.error)
+        'You closed the sign-in before finishing, so nothing was connected. Your accounts are unchanged. Tap the connect button whenever you are ready.'
       );
     }
 
@@ -86,24 +112,24 @@ module.exports = async (req, res) => {
         req,
         res,
         400,
-        'Incomplete Google callback',
-        'Missing OAuth code or state parameter.'
+        'That sign-in did not finish',
+        'Google did not send you back properly. Please return to the ClinicFlow page and tap the connect button again.'
       );
     }
 
     const stateCheck = verifyState(String(query.state), 'google', clientSecret);
-    if (!stateCheck.valid) {
+    if (!stateCheck.valid || !(await consumeSingleUseState(store, stateCheck.nonce))) {
       return sendError(
         req,
         res,
         400,
-        'Invalid OAuth state',
-        `OAuth state check failed (${stateCheck.reason}). Please restart Google Connect.`
+        'That sign-in link expired',
+        'For your safety, each sign-in link works only once and only for a short time. Please return to the ClinicFlow page and tap the connect button again.'
       );
     }
 
     const clinicId = stateCheck.clinicId;
-    const { origin } = getRequestOrigin(req);
+    const origin = getOAuthBaseUrl(req);
     const redirectUri = `${origin}/api/callback/google`;
 
     const tokenData = await exchangeGoogleCode({
@@ -121,49 +147,47 @@ module.exports = async (req, res) => {
     try {
       email = await fetchGoogleUserEmail(tokenData.access_token);
     } catch (emailErr) {
-      console.warn('[clinicflow] Google userinfo fetch failed:', emailErr.message);
+      logServerError('google_userinfo', emailErr);
     }
 
-    const clinicKey = `clinic:${clinicId}`;
-    const nowIso = new Date().toISOString();
-    const existing = (await store.get(clinicKey)) || {
-      clinicId,
-      createdAt: nowIso,
-    };
-    const prevGoogle = existing.google || {};
+    const [prevGoogle, prevProfile] = await Promise.all([
+      clinicStore.getClinicSection(store, clinicId, 'google'),
+      clinicStore.getClinicSection(store, clinicId, 'profile'),
+    ]);
+    const baseGoogle = prevGoogle || {};
 
-    let spreadsheetId = prevGoogle.spreadsheetId || null;
-    let spreadsheetUrl = prevGoogle.spreadsheetUrl || null;
-    let sheetWarning = null;
+    let spreadsheetId = baseGoogle.spreadsheetId || null;
+    let spreadsheetUrl = baseGoogle.spreadsheetUrl || null;
+    let sheetWarning = false;
 
     if (!spreadsheetId) {
       try {
         const created = await createClinicSpreadsheet(
           tokenData.access_token,
-          existing.profile && existing.profile.name
+          prevProfile && prevProfile.name
         );
         spreadsheetId = created.spreadsheetId;
         spreadsheetUrl = created.spreadsheetUrl;
       } catch (sheetErr) {
-        sheetWarning = sheetErr.message;
-        console.warn('[clinicflow] Could not auto-create clinic Sheet:', sheetErr.message);
+        sheetWarning = true;
+        logServerError('google_create_sheet', sheetErr);
       }
     }
 
-    existing.google = {
-      email: email || prevGoogle.email || null,
+    const nowIso = new Date().toISOString();
+    const nextGoogle = {
+      email: email || baseGoogle.email || null,
       accessToken: tokenData.access_token,
-      refreshToken: tokenData.refresh_token || prevGoogle.refreshToken || null,
+      refreshToken: tokenData.refresh_token || baseGoogle.refreshToken || null,
       expiresAt: Date.now() + (Number(tokenData.expires_in) || 3600) * 1000,
       spreadsheetId,
       spreadsheetUrl,
-      calendarId: prevGoogle.calendarId || 'primary',
+      calendarId: baseGoogle.calendarId || 'primary',
       connectedAt: nowIso,
     };
-    existing.updatedAt = nowIso;
 
-    await store.put(clinicKey, existing);
-    setClinicCookie(req, res, clinicId);
+    await clinicStore.saveClinicSection(store, clinicId, 'google', nextGoogle);
+    await ensureMetaRecordOnCallback(req, res, clinicId);
 
     if (isHtml) {
       const qs = sheetWarning ? '?connected=google&sheet_warning=1' : '?connected=google';
@@ -173,20 +197,21 @@ module.exports = async (req, res) => {
     return res.status(200).json({
       status: 'connected',
       provider: 'google',
-      clinic_id: clinicId,
-      email: existing.google.email,
-      has_refresh_token: Boolean(existing.google.refreshToken),
-      spreadsheet_id: existing.google.spreadsheetId,
-      spreadsheet_url: existing.google.spreadsheetUrl,
+      email: nextGoogle.email,
+      has_refresh_token: Boolean(nextGoogle.refreshToken),
+      spreadsheet_id: nextGoogle.spreadsheetId,
+      spreadsheet_url: nextGoogle.spreadsheetUrl,
       sheet_warning: sheetWarning,
     });
   } catch (err) {
+    const ref = logServerError('callback_google', err);
     return sendError(
       req,
       res,
       500,
       'Google connection failed',
-      err.message || 'Unexpected error during Google OAuth callback.'
+      'Something went wrong on our side while connecting. Please try again in a few minutes. Your accounts are unchanged and safe.',
+      ref
     );
   }
 };

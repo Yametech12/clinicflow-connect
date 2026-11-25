@@ -1,15 +1,23 @@
 // ClinicFlow Connect: Facebook OAuth callback.
 // Exchanges code -> user token -> long-lived user token -> /me/accounts Pages,
-// subscribes the chosen Page to app webhooks, and stores the Page token.
+// subscribes the chosen Page to app webhooks, and stores the Page token in its
+// dedicated clinic section key.
 const crypto = require('crypto');
 const store = require('../_store');
+const clinicStore = require('../_clinic');
 const {
-  getRequestOrigin,
+  getOAuthBaseUrl,
+  getClinicIdFromRequest,
+  createClinicKey,
+  hashClinicKey,
   setClinicCookie,
+  setClinicKeyCookie,
   verifyState,
+  consumeSingleUseState,
   readRequestBody,
   wantsHtml,
   escapeHtml,
+  logServerError,
   renderStatusHtml,
   redirect,
 } = require('../_session');
@@ -56,36 +64,52 @@ async function subscribePageToApp(pageId, pageAccessToken) {
   return data;
 }
 
+async function ensureMetaRecordOnCallback(req, res, clinicId) {
+  const existingMeta = await clinicStore.getClinicSection(store, clinicId, 'meta');
+  if (existingMeta && existingMeta.keyHash) {
+    if (getClinicIdFromRequest(req) === clinicId) {
+      setClinicCookie(req, res, clinicId);
+    }
+    return;
+  }
+
+  const nowIso = new Date().toISOString();
+  const newKey = createClinicKey();
+  await clinicStore.saveClinicSection(store, clinicId, 'meta', {
+    clinicId,
+    keyHash: hashClinicKey(newKey),
+    createdAt: (existingMeta && existingMeta.createdAt) || nowIso,
+    updatedAt: nowIso,
+  });
+  setClinicCookie(req, res, clinicId);
+  setClinicKeyCookie(req, res, newKey);
+}
+
 async function completePageConnection({ req, res, clinicId, page, isHtml }) {
   await subscribePageToApp(page.id, page.access_token);
 
-  const clinicKey = `clinic:${clinicId}`;
   const nowIso = new Date().toISOString();
-  const existing = (await store.get(clinicKey)) || {
-    clinicId,
-    createdAt: nowIso,
-  };
+  const prevFacebook = await clinicStore.getClinicSection(store, clinicId, 'facebook');
 
-  if (existing.facebook && existing.facebook.pageId && existing.facebook.pageId !== String(page.id)) {
-    const oldPageKey = `fb_page:${existing.facebook.pageId}`;
+  if (prevFacebook && prevFacebook.pageId && prevFacebook.pageId !== String(page.id)) {
+    const oldPageKey = `fb_page:${prevFacebook.pageId}`;
     const oldMapping = await store.get(oldPageKey);
     if (oldMapping && oldMapping.clinicId === clinicId) {
       await store.del(oldPageKey);
     }
   }
 
-  existing.facebook = {
+  const nextFacebook = {
     pageId: String(page.id),
     pageName: String(page.name || page.id),
     pageAccessToken: String(page.access_token),
     subscribed: true,
     connectedAt: nowIso,
   };
-  existing.updatedAt = nowIso;
 
-  await store.put(clinicKey, existing);
+  await clinicStore.saveClinicSection(store, clinicId, 'facebook', nextFacebook);
   await store.put(`fb_page:${page.id}`, { clinicId });
-  setClinicCookie(req, res, clinicId);
+  await ensureMetaRecordOnCallback(req, res, clinicId);
 
   if (isHtml) {
     return redirect(res, '/?connected=facebook');
@@ -94,14 +118,14 @@ async function completePageConnection({ req, res, clinicId, page, isHtml }) {
   return res.status(200).json({
     status: 'connected',
     provider: 'facebook',
-    clinic_id: clinicId,
-    page_id: existing.facebook.pageId,
-    page_name: existing.facebook.pageName,
+    page_id: nextFacebook.pageId,
+    page_name: nextFacebook.pageName,
     subscribed: true,
   });
 }
 
-function sendError(req, res, statusCode, heading, message) {
+function sendError(req, res, statusCode, heading, message, ref) {
+  const finalMsg = ref ? `${message} (Reference: ${ref})` : message;
   if (wantsHtml(req)) {
     res.statusCode = statusCode;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -109,7 +133,7 @@ function sendError(req, res, statusCode, heading, message) {
       renderStatusHtml({
         title: heading,
         heading,
-        message,
+        message: finalMsg,
         tone: 'error',
       })
     );
@@ -117,7 +141,8 @@ function sendError(req, res, statusCode, heading, message) {
   return res.status(statusCode).json({
     status: 'error',
     provider: 'facebook',
-    message,
+    message: finalMsg,
+    ...(ref ? { ref } : {}),
   });
 }
 
@@ -127,20 +152,17 @@ module.exports = async (req, res) => {
   const storageInfo = store.getBackendInfo();
   const isHtml = wantsHtml(req);
 
-  const missing = [];
-  if (!appId) missing.push('META_APP_ID');
-  if (!appSecret) missing.push('META_APP_SECRET');
-  if (!storageInfo.configured) missing.push(...storageInfo.missing);
-
-  if (missing.length > 0) {
-    const msg = `Server setup pending. Missing: ${missing.join(', ')}.`;
+  if (!appId || !appSecret || !storageInfo.configured) {
+    const heading = 'This step is not switched on yet';
+    const msg =
+      'This part of ClinicFlow is still being set up on our side. Please go back and try again later. There is nothing wrong with your account.';
     if (isHtml) {
       res.statusCode = 503;
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       return res.end(
         renderStatusHtml({
-          title: 'Setup pending',
-          heading: 'Facebook connect setup pending',
+          title: heading,
+          heading,
           message: msg,
           tone: 'warn',
         })
@@ -149,7 +171,6 @@ module.exports = async (req, res) => {
     return res.status(503).json({
       status: 'setup_pending',
       provider: 'facebook',
-      missing,
       message: msg,
     });
   }
@@ -170,8 +191,8 @@ module.exports = async (req, res) => {
           req,
           res,
           400,
-          'Missing Page selection',
-          'Please select a Facebook Page and submit again.'
+          'That Page was not in your list',
+          'Facebook did not include that Page in the list it gave us. Please reconnect and pick your clinic Page from the list.'
         );
       }
 
@@ -183,7 +204,7 @@ module.exports = async (req, res) => {
           res,
           400,
           'Selection expired',
-          'Your Facebook Page selection session expired. Please reconnect Facebook from the home page.'
+          'Your Page selection took too long and expired. Please reconnect Facebook from the home page and pick your Page again.'
         );
       }
 
@@ -193,8 +214,8 @@ module.exports = async (req, res) => {
           req,
           res,
           400,
-          'Invalid Page',
-          'The selected Facebook Page was not found in your authorized Page list.'
+          'That Page was not in your list',
+          'Facebook did not include that Page in the list it gave us. Please reconnect and pick your clinic Page from the list.'
         );
       }
 
@@ -211,8 +232,13 @@ module.exports = async (req, res) => {
 
     const query = req.query || {};
     if (query.error) {
-      const desc = query.error_description || query.error_reason || query.error;
-      return sendError(req, res, 400, 'Facebook sign-in cancelled', String(desc));
+      return sendError(
+        req,
+        res,
+        400,
+        'Facebook sign-in cancelled',
+        'You closed the sign-in before finishing, so nothing was connected. Your accounts are unchanged. Tap the connect button whenever you are ready.'
+      );
     }
 
     if (!query.code || !query.state) {
@@ -220,24 +246,24 @@ module.exports = async (req, res) => {
         req,
         res,
         400,
-        'Incomplete Facebook callback',
-        'Missing OAuth code or state parameter.'
+        'That sign-in did not finish',
+        'Facebook did not send you back properly. Please return to the ClinicFlow page and tap the connect button again.'
       );
     }
 
     const stateCheck = verifyState(String(query.state), 'facebook', appSecret);
-    if (!stateCheck.valid) {
+    if (!stateCheck.valid || !(await consumeSingleUseState(store, stateCheck.nonce))) {
       return sendError(
         req,
         res,
         400,
-        'Invalid OAuth state',
-        `OAuth state check failed (${stateCheck.reason}). Please restart Facebook Connect.`
+        'That sign-in link expired',
+        'For your safety, each sign-in link works only once and only for a short time. Please return to the ClinicFlow page and tap the connect button again.'
       );
     }
 
     const clinicId = stateCheck.clinicId;
-    const { origin } = getRequestOrigin(req);
+    const origin = getOAuthBaseUrl(req);
     const redirectUri = `${origin}/api/callback/facebook`;
 
     // 1. Exchange authorization code for short-lived user access token.
@@ -269,7 +295,7 @@ module.exports = async (req, res) => {
       throw new Error('Meta did not return a long-lived user access_token.');
     }
 
-    // 3. Fetch the user's Pages (Page tokens derived from a long-lived user token do not expire).
+    // 3. Fetch the user's Pages (Page tokens from long-lived user token do not expire).
     const accountsParams = new URLSearchParams({
       fields: 'id,name,access_token',
       limit: '100',
@@ -289,7 +315,7 @@ module.exports = async (req, res) => {
         res,
         400,
         'No Facebook Pages found',
-        'No manageable Facebook Pages were returned for this account. Make sure you own or manage a Facebook Page and granted Page permissions.'
+        'We could not find a Facebook Page on this account. ClinicFlow needs a Page, not just a personal profile. If your clinic Page is managed from another account, please sign in with that account instead.'
       );
     }
 
@@ -297,7 +323,13 @@ module.exports = async (req, res) => {
     if (requestedPageId) {
       const matched = pages.find((p) => String(p.id) === requestedPageId);
       if (!matched) {
-        return sendError(req, res, 400, 'Page not found', 'Requested page_id was not returned by Meta.');
+        return sendError(
+          req,
+          res,
+          400,
+          'That Page was not in your list',
+          'Facebook did not include that Page in the list it gave us. Please reconnect and pick your clinic Page from the list.'
+        );
       }
       return await completePageConnection({ req, res, clinicId, page: matched, isHtml });
     }
@@ -321,13 +353,12 @@ module.exports = async (req, res) => {
       },
       { ttlSeconds: 600 }
     );
-    setClinicCookie(req, res, clinicId);
+    await ensureMetaRecordOnCallback(req, res, clinicId);
 
     if (!isHtml) {
       return res.status(200).json({
         status: 'page_selection_required',
         provider: 'facebook',
-        clinic_id: clinicId,
         selection_token: selectionToken,
         pages: pages.map((p) => ({ id: String(p.id), name: String(p.name || p.id) })),
       });
@@ -345,6 +376,7 @@ module.exports = async (req, res) => {
     const formHtml = `<form method="POST" action="/api/callback/facebook">
       <input type="hidden" name="selection_token" value="${escapeHtml(selectionToken)}">
       ${radios}
+      <p class="safety">Only the Page you pick gets connected. Your other Pages are not touched.</p>
       <button class="btn" type="submit">Connect selected Page</button>
     </form>`;
 
@@ -360,12 +392,14 @@ module.exports = async (req, res) => {
       })
     );
   } catch (err) {
+    const ref = logServerError('callback_facebook', err);
     return sendError(
       req,
       res,
       500,
       'Facebook connection failed',
-      err.message || 'Unexpected error during Facebook OAuth callback.'
+      'Something went wrong on our side while connecting. Please try again in a few minutes. Your accounts are unchanged and safe.',
+      ref
     );
   }
 };

@@ -1,11 +1,11 @@
 # ClinicFlow Connect v1
 
 The connect website and multi-tenant serverless engine for ClinicFlow PH, the
-AI Messenger front desk for Philippine dental clinics. A clinic owner opens
+Messenger front desk for Philippine dental clinics. A clinic owner opens
 this page, fills in their clinic profile, and links their own Facebook Page,
 Google account (Sheet + Calendar), and Telegram chat. Nothing pretends to
 work when credentials or storage are missing: unconfigured steps honestly
-report `setup_pending` or `storage_pending`.
+report pending setup in plain language.
 
 ## Architecture
 
@@ -21,15 +21,18 @@ Two sides, kept separate on purpose:
   Clinics sign in with their own accounts through the connect buttons. If a
   clinic stops paying, their Page, data, and calendar stay theirs.
 
-Flow once wired: patient messages the clinic Page -> Meta sends the event to
-`api/webhook.js` -> the pipeline looks up the Page's clinic record -> loads
-live `FAQ_Prices` from that clinic's Google Sheet -> calls the Gemini API for
-a warm Taglish reply (max 3 sentences) -> collects full name, mobile number,
-and preferred schedule -> when all 3 are present, appends the lead to
-`Leads_Bookings`, creates a Google Calendar event, and sends a Telegram alert
-to the clinic's linked chat ID.
+Flow once wired: patient messages the clinic Page -> Meta signs and sends the
+event to `api/webhook.js` -> webhook verifies `X-Hub-Signature-256` -> the
+pipeline looks up the Page's clinic record -> loads `FAQ_Prices` (capped at
+100 rows / ~6000 chars) from that clinic's Google Sheet -> calls the Gemini API
+via `x-goog-api-key` header for a warm Taglish reply (max 3 sentences) ->
+collects full name, valid Philippine mobile number, and preferred schedule ->
+when all 3 are valid, writes the Google Calendar event and/or `Leads_Bookings`
+row, marks the 10-min re-booking guard only after a record succeeds, sends the
+Messenger reply before non-essential logging, and sends a Telegram alert to the
+clinic's linked chat ID.
 
-## Storage choice (`api/_store.js`)
+## Storage choice (`api/_store.js` & `api/_clinic.js`)
 
 Vercel functions have no persistent filesystem. `api/_store.js` uses an
 **HTTPS key-value store (Upstash Redis / Vercel KV REST API)** behind a clean
@@ -42,52 +45,53 @@ services (Upstash free tier) and zero npm dependencies (uses Node built-in
 - Local offline testing option: set `CLINICFLOW_LOCAL_STORE_FILE` (e.g.
   `.local-store.json`) to store entries in a local JSON file with TTL support
   when not running on Vercel.
-- Keys stored:
-  - `clinic:<clinicId>`: profile, Facebook Page token, Google OAuth tokens +
-    refresh token + spreadsheet ID, Telegram chat ID.
+- Per-section clinic keys (`api/_clinic.js`) prevent concurrent writers from
+  clobbering each other (migrating legacy `clinic:<id>` records on first read):
+  - `clinic:<clinicId>:meta`: `keyHash` (SHA256 of `cf_key` cookie), timestamps.
+  - `clinic:<clinicId>:profile`: name, address, hours, timezone.
+  - `clinic:<clinicId>:facebook`: Page ID, Page name, Page token, subscription.
+  - `clinic:<clinicId>:google`: email, access token, refresh token, Sheet ID.
+  - `clinic:<clinicId>:telegram`: chat ID, username, first name.
+- Lookup, safety, and state keys:
   - `fb_page:<pageId>`: `{ clinicId }` lookup index for incoming webhooks.
-  - `fb_pending:<selectionToken>`: 10-min temporary Page list when a user
-    manages multiple Facebook Pages.
-  - `tg_code:<code>`: 10-min Telegram linking payload `{ clinicId }`.
-  - `msg_dedup:<pageId>:<mid>` (5-min TTL), `booked:<pageId>:<senderId>`
-    (10-min TTL), `hist:<pageId>:<senderId>` (30-min TTL, max 6 messages).
+  - `fb_pending:<selectionToken>`: 10-min temporary Page list for multi-Page accounts.
+  - `state:<nonce>`: 30-min single-use OAuth state marker.
+  - `tg_code:<code>` (10-min TTL, created with `putIfAbsent`) and `tg_fail:<chatId>`
+    (15-min brute-force backoff after 5 invalid code guesses).
+  - `msg_dedup:<pageId>:<mid>` (5-min TTL, released on exception), `booked:<pageId>:<senderId>`
+    (10-min TTL, written only after Calendar/Sheet success), `hist:<pageId>:<senderId>`
+    (30-min TTL, max 6 messages), and `dead:<pageId>:<mid>` (24-hr dead-letter record).
 
 ## Files
 
-- `index.html`: landing and connect page. Plain static HTML, CSS, and JS.
-  Reads real server state from `/api/health` and `/api/clinic` and saves the
-  clinic profile to `/api/clinic` when storage is configured.
+- `index.html`: landing and connect page. Includes sticky 4-step progress bar,
+  live front-end sample price demo, dark color scheme, 48px touch targets,
+  8000ms fetch timeouts, return banners, pilot pricing strip, and plain-language
+  status copy.
 - `api/_store.js`: swappable KV storage layer (`get`, `put`, `putIfAbsent`,
   `del`, `isConfigured`, `getBackendInfo`).
-- `api/_session.js`: clinic session cookie (`cf_clinic`), HMAC-signed OAuth
-  `state`, origin detection, and response helpers.
-- `api/_google.js`: Google OAuth code exchange + automatic `refresh_token`
+- `api/_clinic.js`: per-section clinic read/write helpers and legacy migration.
+- `api/_session.js`: `cf_clinic` + `cf_key` HttpOnly cookies, HMAC-signed
+  single-use OAuth `state`, `PUBLIC_BASE_URL` origin pinning, correlation-ID
+  server error logging, and response helpers.
+- `api/_google.js`: Google OAuth code exchange + section-safe `refresh_token`
   renewal, Sheet provisioning (`FAQ_Prices`, `Leads_Bookings`, `System_Logs`),
-  FAQ loader, lead row writer, and Calendar event creation.
-- `api/_pipeline.js`: message pipeline ported from `../clinicflow/Code.gs`
-  (Taglish prompt, Gemini JSON call, booking guard, Messenger reply, Telegram
-  alerts and `/start` linking handler).
-- `api/health.js`: GET. Returns booleans only for configured env vars and
-  provider readiness (values are never returned).
-- `api/clinic.js`: GET/POST. Returns sanitized clinic status (no tokens) and
-  saves clinic profile + optional existing Sheet URL/ID.
-- `api/connect/facebook.js`: GET. Builds the signed Facebook Login OAuth URL.
-- `api/callback/facebook.js`: GET/POST. Exchanges code -> user token ->
-  long-lived user token -> `/me/accounts` Pages, renders a Page picker if the
-  account manages multiple Pages, subscribes the chosen Page to the app
-  (`messages,messaging_postbacks`), and stores the Page token.
-- `api/connect/google.js`: GET. Builds the signed Google OAuth URL.
-- `api/callback/google.js`: GET. Exchanges code for access + refresh tokens,
-  fetches email, auto-creates a seeded clinic Sheet if none is linked yet,
-  and stores the tokens.
-- `api/connect/telegram.js`: GET. Generates a 6-character code, stores it for
-  10 minutes, and returns a deep link `https://t.me/<bot>?start=<code>`.
-- `api/webhook.js`: GET verifies Meta `META_VERIFY_TOKEN`; POST handles both
-  Meta Messenger events (`object === 'page'`) and Telegram bot updates
-  (`/start <code>` linking).
-- `vercel.json`: serves the static page and the api functions together.
-- `.env.example`: every variable, with where to get it.
-- `TESTING.md`: local test verification log and live-account checklist.
+  capped FAQ loader, lead row writer, and Calendar event creation.
+- `api/_pipeline.js`: message pipeline ported from `../clinicflow/Code.gs`.
+- `api/health.js`: GET. Publicly returns `{ status: "ok" }`. Detailed env-var
+  booleans require `x-admin-probe` header matching `ADMIN_PROBE_TOKEN`.
+- `api/clinic.js`: GET/POST. Cookie-authenticated clinic profile and connection
+  summary (redacts `email` and `spreadsheet_url` if `cf_key` is absent; rejects
+  POST without valid `cf_key` with 403).
+- `api/connect/facebook.js`, `api/connect/google.js`, `api/connect/telegram.js`:
+  connect starters returning signed OAuth URLs or deep links (`https://t.me/<bot>?start=<code>`).
+- `api/callback/facebook.js`, `api/callback/google.js`: real OAuth callbacks
+  with single-use state enforcement and correlation-ID error pages.
+- `api/webhook.js`: disables `bodyParser`, verifies Meta `X-Hub-Signature-256`
+  over raw bytes (403 fail-closed when `META_APP_SECRET` is set), handles Meta
+  GET verification, processes Messenger events, and handles Telegram `/start`
+  linking (enforcing `TELEGRAM_WEBHOOK_SECRET` when set).
+- `vercel.json`, `.env.example`, `TESTING.md`.
 
 No external npm dependencies. Functions use only Node 18+ built-ins
 (`fetch`, `URLSearchParams`, `crypto`, `Intl.DateTimeFormat`).
@@ -95,34 +99,23 @@ No external npm dependencies. Functions use only Node 18+ built-ins
 ## Setup and deploy steps
 
 1. Configure environment variables from `.env.example` in Vercel:
-   - Existing/central app vars: `META_APP_ID`, `META_APP_SECRET`,
-     `META_VERIFY_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-     `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`.
-   - New vars: `KV_REST_API_URL`, `KV_REST_API_TOKEN` (from Upstash Redis free
-     tier / Vercel Marketplace), optional `GEMINI_MODEL` (defaults to
-     `gemini-3.5-flash-lite`), optional `TELEGRAM_WEBHOOK_SECRET`.
+   - Core providers: `META_APP_ID`, `META_APP_SECRET`, `META_VERIFY_TOKEN`,
+     `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GEMINI_API_KEY`,
+     `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`.
+   - Storage & security: `KV_REST_API_URL`, `KV_REST_API_TOKEN`,
+     `PUBLIC_BASE_URL` (your production origin), `ADMIN_PROBE_TOKEN`,
+     `TELEGRAM_WEBHOOK_SECRET`, optional `GEMINI_MODEL` (defaults to
+     `gemini-3.5-flash-lite`).
 2. Deploy with `vercel --prod`.
 3. Register the deployed callback and webhook URLs:
    - Meta OAuth redirect URI: `https://YOUR-DOMAIN/api/callback/facebook`
    - Meta Webhook callback URL: `https://YOUR-DOMAIN/api/webhook` (with
      `META_VERIFY_TOKEN`, subscribed to `messages` and `messaging_postbacks`)
    - Google OAuth redirect URI: `https://YOUR-DOMAIN/api/callback/google`
-   - Telegram Bot webhook (one-time call):
-     `curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://YOUR-DOMAIN/api/webhook"`
-     (plus `&secret_token=$TELEGRAM_WEBHOOK_SECRET` if set).
-
-## Pending owner / production prerequisites
-
-1. Set `KV_REST_API_URL` and `KV_REST_API_TOKEN` (and `META_VERIFY_TOKEN`,
-   `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`) in Vercel.
-2. Meta App Review for `pages_messaging` and `pages_manage_metadata` (plus
-   Business Verification) before onboarding external clinic Pages outside app
-   admins/testers.
-3. Register the Telegram bot `setWebhook` URL so `/start <code>` updates reach
-   `/api/webhook`.
+   - Telegram Bot webhook (one-time call with `secret_token`):
+     `curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://YOUR-DOMAIN/api/webhook&secret_token=$TELEGRAM_WEBHOOK_SECRET"`
 
 ## Local test
 
-See [TESTING.md](./TESTING.md) for how functions are tested locally with Node
-and mock HTTP / fetch stubs, and what requires live provider credentials to
-verify end-to-end.
+See [TESTING.md](./TESTING.md) for the local verification checklist and what
+requires live provider accounts to verify end-to-end.

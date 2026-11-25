@@ -1,8 +1,10 @@
-// ClinicFlow Connect: clinic session, OAuth state signing, and HTTP helpers.
+// ClinicFlow Connect: clinic session cookies, OAuth state signing, and HTTP helpers.
 const crypto = require('crypto');
 
 const CLINIC_COOKIE_NAME = 'cf_clinic';
+const CLINIC_KEY_COOKIE_NAME = 'cf_key';
 const CLINIC_ID_RE = /^cln_[A-Za-z0-9_-]{8,48}$/;
+const CLINIC_KEY_RE = /^[A-Za-z0-9_-]{20,80}$/;
 
 function getRequestOrigin(req) {
   const headers = (req && req.headers) || {};
@@ -20,6 +22,14 @@ function getRequestOrigin(req) {
   }
 
   return { proto, host, origin: `${proto}://${host}` };
+}
+
+function getOAuthBaseUrl(req) {
+  const canonical = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
+  if (canonical) {
+    return canonical;
+  }
+  return getRequestOrigin(req).origin;
 }
 
 function parseCookies(req) {
@@ -46,15 +56,34 @@ function isValidClinicId(id) {
   return typeof id === 'string' && CLINIC_ID_RE.test(id);
 }
 
+function isValidClinicKey(key) {
+  return typeof key === 'string' && CLINIC_KEY_RE.test(key);
+}
+
 function createClinicId() {
   return `cln_${crypto.randomBytes(12).toString('base64url')}`;
 }
 
-function getClinicIdFromRequest(req) {
-  const queryId = req && req.query && req.query.clinic_id;
-  if (isValidClinicId(queryId)) {
-    return queryId;
+function createClinicKey() {
+  return crypto.randomBytes(24).toString('base64url');
+}
+
+function hashClinicKey(rawKey) {
+  return crypto.createHash('sha256').update(String(rawKey)).digest('hex');
+}
+
+function verifyClinicKeyHash(rawKey, expectedHash) {
+  if (!isValidClinicKey(rawKey) || typeof expectedHash !== 'string' || !expectedHash) {
+    return false;
   }
+  const actualHash = hashClinicKey(rawKey);
+  const a = Buffer.from(actualHash, 'utf8');
+  const b = Buffer.from(expectedHash, 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// Session identity comes strictly from cookies (never query parameters).
+function getClinicIdFromRequest(req) {
   const cookies = parseCookies(req);
   if (isValidClinicId(cookies[CLINIC_COOKIE_NAME])) {
     return cookies[CLINIC_COOKIE_NAME];
@@ -62,22 +91,16 @@ function getClinicIdFromRequest(req) {
   return null;
 }
 
-function setClinicCookie(req, res, clinicId) {
-  if (!res || typeof res.setHeader !== 'function' || !isValidClinicId(clinicId)) {
-    return;
+function getClinicKeyFromRequest(req) {
+  const cookies = parseCookies(req);
+  if (isValidClinicKey(cookies[CLINIC_KEY_COOKIE_NAME])) {
+    return cookies[CLINIC_KEY_COOKIE_NAME];
   }
-  const { proto } = getRequestOrigin(req);
-  const parts = [
-    `${CLINIC_COOKIE_NAME}=${encodeURIComponent(clinicId)}`,
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-    `Max-Age=${30 * 24 * 60 * 60}`,
-  ];
-  if (proto === 'https') {
-    parts.push('Secure');
-  }
-  const cookieValue = parts.join('; ');
+  return null;
+}
+
+function appendSetCookie(res, cookieValue) {
+  if (!res || typeof res.setHeader !== 'function') return;
   const existing =
     typeof res.getHeader === 'function' ? res.getHeader('Set-Cookie') : undefined;
   if (!existing) {
@@ -89,14 +112,90 @@ function setClinicCookie(req, res, clinicId) {
   }
 }
 
-function ensureClinicId(req, res) {
-  const existing = getClinicIdFromRequest(req);
-  if (existing) {
-    return existing;
+function buildCookieString(req, name, value) {
+  const { proto } = getRequestOrigin(req);
+  const parts = [
+    `${name}=${encodeURIComponent(value)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${30 * 24 * 60 * 60}`,
+  ];
+  if (proto === 'https') {
+    parts.push('Secure');
   }
-  const created = createClinicId();
-  setClinicCookie(req, res, created);
-  return created;
+  return parts.join('; ');
+}
+
+function setClinicCookie(req, res, clinicId) {
+  if (!isValidClinicId(clinicId)) return;
+  appendSetCookie(res, buildCookieString(req, CLINIC_COOKIE_NAME, clinicId));
+}
+
+function setClinicKeyCookie(req, res, clinicKey) {
+  if (!isValidClinicKey(clinicKey)) return;
+  appendSetCookie(res, buildCookieString(req, CLINIC_KEY_COOKIE_NAME, clinicKey));
+}
+
+async function ensureClinicSession(req, res, store, clinicStore) {
+  const existingId = getClinicIdFromRequest(req);
+  const existingKey = getClinicKeyFromRequest(req);
+
+  if (existingId) {
+    let hasValidKey = false;
+    let effectiveKey = existingKey;
+    if (store && store.isConfigured() && clinicStore) {
+      const meta = await clinicStore.getClinicSection(store, existingId, 'meta');
+      if (meta && meta.keyHash) {
+        hasValidKey = verifyClinicKeyHash(existingKey, meta.keyHash);
+      } else {
+        // No key hash stored yet (legacy v1 record, or meta not yet written):
+        // bind the presented cf_key, or issue a fresh one, so this session can
+        // save. The cf_clinic cookie itself was the v1 session credential, so
+        // binding on first touch is the migration path for pre-cf_key clinics.
+        if (!effectiveKey) {
+          effectiveKey = createClinicKey();
+          setClinicKeyCookie(req, res, effectiveKey);
+        }
+        const nowIso = new Date().toISOString();
+        await clinicStore.saveClinicSection(store, existingId, 'meta', {
+          clinicId: existingId,
+          keyHash: hashClinicKey(effectiveKey),
+          createdAt: (meta && meta.createdAt) || nowIso,
+          updatedAt: nowIso,
+        });
+        hasValidKey = true;
+      }
+    }
+    return {
+      clinicId: existingId,
+      clinicKey: effectiveKey,
+      hasValidKey,
+      sessionIssued: false,
+    };
+  }
+
+  const createdId = createClinicId();
+  const createdKey = createClinicKey();
+  setClinicCookie(req, res, createdId);
+  setClinicKeyCookie(req, res, createdKey);
+
+  if (store && store.isConfigured() && clinicStore) {
+    const nowIso = new Date().toISOString();
+    await clinicStore.saveClinicSection(store, createdId, 'meta', {
+      clinicId: createdId,
+      keyHash: hashClinicKey(createdKey),
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+  }
+
+  return {
+    clinicId: createdId,
+    clinicKey: createdKey,
+    hasValidKey: true,
+    sessionIssued: true,
+  };
 }
 
 function signState(clinicId, provider, secret) {
@@ -106,7 +205,7 @@ function signState(clinicId, provider, secret) {
   const payload = {
     c: clinicId,
     p: provider,
-    n: crypto.randomBytes(8).toString('hex'),
+    n: crypto.randomBytes(12).toString('hex'),
     t: Date.now(),
   };
   const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
@@ -117,7 +216,13 @@ function signState(clinicId, provider, secret) {
   return `${encoded}.${sig}`;
 }
 
-function verifyState(state, expectedProvider, secret, maxAgeMs = 30 * 60 * 1000) {
+function verifyState(
+  state,
+  expectedProvider,
+  secret,
+  maxAgeMs = 30 * 60 * 1000,
+  maxFutureMs = 2 * 60 * 1000
+) {
   if (!state || typeof state !== 'string' || !secret) {
     return { valid: false, reason: 'Missing state or secret' };
   }
@@ -145,15 +250,35 @@ function verifyState(state, expectedProvider, secret, maxAgeMs = 30 * 60 * 1000)
     return { valid: false, reason: 'Unreadable state payload' };
   }
 
-  if (!payload || payload.p !== expectedProvider || !isValidClinicId(payload.c)) {
-    return { valid: false, reason: 'State provider or clinic mismatch' };
+  if (
+    !payload ||
+    payload.p !== expectedProvider ||
+    !isValidClinicId(payload.c) ||
+    typeof payload.n !== 'string' ||
+    !/^[a-f0-9]{16,64}$/i.test(payload.n)
+  ) {
+    return { valid: false, reason: 'State provider, nonce, or clinic mismatch' };
   }
 
-  if (!Number.isFinite(payload.t) || Date.now() - payload.t > maxAgeMs) {
+  const now = Date.now();
+  if (!Number.isFinite(payload.t)) {
+    return { valid: false, reason: 'Invalid state timestamp' };
+  }
+  if (payload.t - now > maxFutureMs) {
+    return { valid: false, reason: 'State timestamp is too far in the future' };
+  }
+  if (now - payload.t > maxAgeMs) {
     return { valid: false, reason: 'State parameter expired' };
   }
 
-  return { valid: true, clinicId: payload.c };
+  return { valid: true, clinicId: payload.c, nonce: payload.n };
+}
+
+async function consumeSingleUseState(store, nonce) {
+  if (!store || !store.isConfigured() || !nonce) {
+    return false;
+  }
+  return store.putIfAbsent(`state:${nonce}`, '1', { ttlSeconds: 30 * 60 });
 }
 
 async function readRequestBody(req) {
@@ -215,6 +340,13 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+function logServerError(scope, err) {
+  const ref = `cf_${crypto.randomBytes(4).toString('hex')}`;
+  const detail = err && (err.stack || err.message || String(err));
+  console.error(`[clinicflow][${ref}][${scope}]`, detail);
+  return ref;
+}
+
 function renderStatusHtml({ title, heading, message, tone = 'info', backHref = '/', extraHtml = '' }) {
   const badgeBg = tone === 'error' ? '#fef2f2' : tone === 'warn' ? '#fdf3e3' : '#e9f6ec';
   const badgeInk = tone === 'error' ? '#991b1b' : tone === 'warn' ? '#b45309' : '#15803d';
@@ -223,15 +355,16 @@ function renderStatusHtml({ title, heading, message, tone = 'info', backHref = '
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${escapeHtml(title)} — ClinicFlow PH</title>
+<title>${escapeHtml(title)}: ClinicFlow PH</title>
 <style>
   body{background:#faf8f3;color:#1c2420;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.55;margin:0;padding:32px 20px}
   .box{max-width:560px;margin:30px auto;background:#fff;border:1px solid #ddd6c9;border-top:4px solid #0f766e;padding:24px}
   h1{font-family:Georgia,"Times New Roman",serif;font-size:24px;margin:0 0 10px}
   .note{background:${badgeBg};color:${badgeInk};padding:10px 12px;border-radius:4px;font-size:14px;margin:12px 0}
-  .btn{display:inline-block;background:#0f766e;color:#fff;text-decoration:none;border:none;border-radius:4px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;margin-top:12px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;background:#0f766e;color:#fff;text-decoration:none;border:none;border-radius:4px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;margin-top:12px}
   .btn:hover{background:#0b5a54}
   .page-item{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #ddd6c9;border-radius:4px;margin-top:8px;cursor:pointer}
+  .safety{font-size:13px;color:#5b6660;margin-top:12px}
 </style>
 </head>
 <body>
@@ -252,11 +385,12 @@ function maskChatId(chatId) {
   return `${'*'.repeat(Math.min(4, s.length - 4))}${s.slice(-4)}`;
 }
 
-function sanitizeClinicSummary(clinic) {
+function sanitizeClinicSummary(clinic, { includeSensitive = true } = {}) {
   const profile = (clinic && clinic.profile) || {};
   const fb = (clinic && clinic.facebook) || {};
   const google = (clinic && clinic.google) || {};
   const tg = (clinic && clinic.telegram) || {};
+  const googleConnected = Boolean(google.accessToken || google.refreshToken);
 
   return {
     clinic_id: clinic ? clinic.clinicId : null,
@@ -275,11 +409,12 @@ function sanitizeClinicSummary(clinic) {
         connected_at: fb.connectedAt || null,
       },
       google: {
-        connected: Boolean(google.accessToken || google.refreshToken),
+        connected: googleConnected,
         has_refresh_token: Boolean(google.refreshToken),
-        email: google.email || null,
-        spreadsheet_id: google.spreadsheetId || null,
-        spreadsheet_url: google.spreadsheetUrl || null,
+        email: includeSensitive ? (google.email || null) : null,
+        spreadsheet_id: includeSensitive ? (google.spreadsheetId || null) : null,
+        spreadsheet_url: includeSensitive ? (google.spreadsheetUrl || null) : null,
+        has_spreadsheet: Boolean(google.spreadsheetId),
         calendar_id: google.calendarId || 'primary',
         connected_at: google.connectedAt || null,
       },
@@ -302,18 +437,29 @@ function redirect(res, location) {
 
 module.exports = {
   CLINIC_COOKIE_NAME,
+  CLINIC_KEY_COOKIE_NAME,
   getRequestOrigin,
+  getOAuthBaseUrl,
   parseCookies,
   isValidClinicId,
+  isValidClinicKey,
   createClinicId,
+  createClinicKey,
+  hashClinicKey,
+  verifyClinicKeyHash,
   getClinicIdFromRequest,
+  getClinicKeyFromRequest,
   setClinicCookie,
-  ensureClinicId,
+  setClinicKeyCookie,
+  ensureClinicSession,
   signState,
   verifyState,
+  consumeSingleUseState,
   readRequestBody,
+  parseRawBody,
   wantsHtml,
   escapeHtml,
+  logServerError,
   renderStatusHtml,
   sanitizeClinicSummary,
   redirect,

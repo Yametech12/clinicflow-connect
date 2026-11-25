@@ -1,6 +1,7 @@
 // ClinicFlow Connect: AI Messenger front-desk pipeline and Telegram bot handler.
 // Ported from ../clinicflow/Code.gs for multi-tenant Vercel serverless execution.
-const { escapeHtml } = require('./_session');
+const clinicStore = require('./_clinic');
+const { escapeHtml, logServerError } = require('./_session');
 const {
   DEFAULT_DURATION_MINS,
   getManilaPromptDates,
@@ -16,10 +17,24 @@ const MAX_HISTORY_MESSAGES = 6;
 const HISTORY_TTL_SECONDS = 1800; // 30 mins
 const MSG_DEDUP_TTL_SECONDS = 300; // 5 mins
 const BOOKED_GUARD_TTL_SECONDS = 600; // 10 mins
+const DEAD_LETTER_TTL_SECONDS = 24 * 60 * 60; // 24 hours
+const TG_MAX_FAILED_ATTEMPTS = 5;
+const TG_FAIL_WINDOW_SECONDS = 900; // 15 mins
+
+const PH_MOBILE_RE = /^(\+63|0)9\d{9}$/;
 
 function getGeminiModel() {
   const configured = (process.env.GEMINI_MODEL || '').trim();
   return configured || DEFAULT_GEMINI_MODEL;
+}
+
+function normalizePhilippineMobile(mobile) {
+  return String(mobile || '').replace(/[\s-]+/g, '').trim();
+}
+
+function isValidPhilippineMobile(mobile) {
+  const normalized = normalizePhilippineMobile(mobile);
+  return PH_MOBILE_RE.test(normalized);
 }
 
 function buildSystemPrompt({ clinicProfile, faqFormattedText, now = new Date() }) {
@@ -43,10 +58,10 @@ STRICT RULES YOU MUST FOLLOW:
 3. PRICE ACCURACY: Quote prices ONLY from the "APPROVED SERVICES & PRICES" list above. Never invent discounts, promos, or unlisted prices. If a service is not on the list, politely say the dentist will confirm the exact rate during checkup.
 4. BOOKING COLLECTION: To book an appointment, you MUST collect all 3 details from the patient:
    - Full Name (patient_name)
-   - Philippine Mobile Number (mobile_number, e.g., 09XXXXXXXXX)
+   - Philippine Mobile Number (mobile_number, e.g., 09XXXXXXXXX or +639XXXXXXXXX)
    - Preferred Date and Time (preferred_datetime)
    If any of the 3 details are missing, ask ONLY for the missing item(s) concisely.
-5. READY TO BOOK FLAG: Set "ready_to_book" to true ONLY when ALL 3 required fields (patient_name, mobile_number, preferred_datetime) have been clearly provided by the patient in this conversation. Otherwise, "ready_to_book" MUST be false.
+5. READY TO BOOK FLAG: Set "ready_to_book" to true ONLY when ALL 3 required fields (patient_name, valid 11-digit Philippine mobile_number, preferred_datetime) have been clearly provided by the patient in this conversation. Otherwise, "ready_to_book" MUST be false.
 6. OUTPUT FORMAT: Return ONLY a valid JSON object matching this exact schema:
 {
   "reply": "Your max-3-sentence Taglish response to the patient",
@@ -71,7 +86,7 @@ async function callGeminiJson({ apiKey, model, systemPrompt, history, userText }
   const chosenModel = model || getGeminiModel();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     chosenModel
-  )}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  )}:generateContent`;
 
   const contents = [];
   if (Array.isArray(history)) {
@@ -94,7 +109,6 @@ async function callGeminiJson({ apiKey, model, systemPrompt, history, userText }
     },
     contents,
     generationConfig: {
-      temperature: 0.3,
       maxOutputTokens: 600,
       responseMimeType: 'application/json',
     },
@@ -102,7 +116,10 @@ async function callGeminiJson({ apiKey, model, systemPrompt, history, userText }
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
     body: JSON.stringify(requestBody),
   });
 
@@ -154,11 +171,11 @@ async function callGeminiJson({ apiKey, model, systemPrompt, history, userText }
 function hasCompleteBookingDetails(booking) {
   if (!booking || typeof booking !== 'object') return false;
   const hasName = String(booking.patient_name || '').trim().length > 0;
-  const hasMobile = String(booking.mobile_number || '').trim().length > 0;
+  const hasValidMobile = isValidPhilippineMobile(booking.mobile_number);
   const hasDateTime =
     String(booking.preferred_datetime_text || '').trim().length > 0 ||
     String(booking.iso_start_time || '').trim().length > 0;
-  return hasName && hasMobile && hasDateTime;
+  return hasName && hasValidMobile && hasDateTime;
 }
 
 function matchServiceDuration(requestedService, faqItems) {
@@ -241,187 +258,311 @@ async function sendTelegramBookingAlert(botToken, chatId, clinicName, booking, e
   return { sent: true };
 }
 
+async function sendTelegramFailureAlert(botToken, chatId, clinicName, booking, detail) {
+  if (!botToken || !chatId) return;
+  const messageText = [
+    `<b>BOOKING NEEDS MANUAL CONFIRMATION (${escapeHtml(clinicName || 'ClinicFlow PH')})</b>`,
+    '',
+    `<b>Patient:</b> ${escapeHtml((booking && booking.patient_name) || 'N/A')}`,
+    `<b>Mobile:</b> <code>${escapeHtml((booking && booking.mobile_number) || 'N/A')}</code>`,
+    `<b>Service:</b> ${escapeHtml((booking && booking.service) || 'Consultation')}`,
+    `<b>Schedule:</b> ${escapeHtml((booking && booking.preferred_datetime_text) || 'N/A')}`,
+    `<b>Issue:</b> ${escapeHtml(detail || 'Could not write booking to Google Calendar or Sheet.')}`,
+  ].join('\n');
+  await sendTelegramMessage(botToken, chatId, messageText, 'HTML');
+}
+
+async function writeDeadLetterRecord(store, { pageId, senderId, messageId, userText, errorMessage }) {
+  try {
+    const suffix = messageId || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await store.put(
+      `dead:${pageId}:${suffix}`,
+      {
+        pageId,
+        senderId,
+        messageId: messageId || null,
+        userText: String(userText || '').slice(0, 500),
+        error: String(errorMessage || 'Unknown error').slice(0, 500),
+        occurredAt: new Date().toISOString(),
+      },
+      { ttlSeconds: DEAD_LETTER_TTL_SECONDS }
+    );
+  } catch (deadErr) {
+    logServerError('dead_letter_write', deadErr);
+  }
+}
+
 async function processMessengerEvent({ pageId, senderId, messageId, userText, store }) {
   if (!store || !store.isConfigured()) {
     console.warn('[clinicflow] Skipping Messenger event: storage is not configured.');
     return { status: 'skipped', reason: 'storage_unconfigured' };
   }
 
-  if (messageId) {
-    const dedupKey = `msg_dedup:${pageId}:${messageId}`;
+  const dedupKey = messageId ? `msg_dedup:${pageId}:${messageId}` : null;
+  if (dedupKey) {
     const isFresh = await store.putIfAbsent(dedupKey, '1', { ttlSeconds: MSG_DEDUP_TTL_SECONDS });
     if (!isFresh) {
       return { status: 'duplicate', messageId };
     }
   }
 
-  const pageMap = await store.get(`fb_page:${pageId}`);
-  if (!pageMap || !pageMap.clinicId) {
-    console.warn(`[clinicflow] No clinic linked for Facebook Page ${pageId}`);
-    return { status: 'ignored', reason: 'page_not_linked', pageId };
-  }
-
-  const clinicId = pageMap.clinicId;
-  const clinic = await store.get(`clinic:${clinicId}`);
-  if (!clinic || !clinic.facebook || !clinic.facebook.pageAccessToken) {
-    console.warn(`[clinicflow] Clinic ${clinicId} missing Facebook Page token`);
-    return { status: 'ignored', reason: 'missing_page_token', clinicId };
-  }
-
+  let clinicId = null;
   let googleAccessToken = null;
-  const spreadsheetId = clinic.google && clinic.google.spreadsheetId;
-  if (clinic.google && (clinic.google.accessToken || clinic.google.refreshToken)) {
-    try {
-      googleAccessToken = await getValidGoogleAccessToken(clinicId, clinic, store);
-    } catch (err) {
-      console.error(`[clinicflow] Google token refresh error for ${clinicId}:`, err.message);
+  let spreadsheetId = null;
+
+  try {
+    const pageMap = await store.get(`fb_page:${pageId}`);
+    if (!pageMap || !pageMap.clinicId) {
+      console.warn(`[clinicflow] No clinic linked for Facebook Page ${pageId}`);
+      return { status: 'ignored', reason: 'page_not_linked', pageId };
     }
-  }
 
-  let faqData = {
-    items: [],
-    formattedText: 'No services listed yet. Ask patient to message our receptionist for rates.',
-  };
-  if (googleAccessToken && spreadsheetId) {
-    try {
-      faqData = await loadFaqPrices(googleAccessToken, spreadsheetId);
-    } catch (err) {
-      console.error(`[clinicflow] FAQ load error for ${clinicId}:`, err.message);
+    clinicId = pageMap.clinicId;
+    const clinic = await clinicStore.getClinic(store, clinicId);
+    if (!clinic || !clinic.facebook || !clinic.facebook.pageAccessToken) {
+      console.warn(`[clinicflow] Clinic ${clinicId} missing Facebook Page token`);
+      return { status: 'ignored', reason: 'missing_page_token', clinicId };
     }
-  }
 
-  const histKey = `hist:${pageId}:${senderId}`;
-  const history = (await store.get(histKey)) || [];
-  const systemPrompt = buildSystemPrompt({
-    clinicProfile: clinic.profile || {},
-    faqFormattedText: faqData.formattedText,
-  });
+    spreadsheetId = clinic.google && clinic.google.spreadsheetId;
+    if (clinic.google && (clinic.google.accessToken || clinic.google.refreshToken)) {
+      try {
+        googleAccessToken = await getValidGoogleAccessToken(clinicId, clinic, store);
+      } catch (err) {
+        logServerError(`google_refresh:${clinicId}`, err);
+      }
+    }
 
-  const aiResult = await callGeminiJson({
-    apiKey: process.env.GEMINI_API_KEY,
-    model: getGeminiModel(),
-    systemPrompt,
-    history,
-    userText,
-  });
+    let faqData = {
+      items: [],
+      formattedText: 'No services listed yet. Ask patient to message our receptionist for rates.',
+    };
+    if (googleAccessToken && spreadsheetId) {
+      try {
+        faqData = await loadFaqPrices(googleAccessToken, spreadsheetId);
+      } catch (err) {
+        logServerError(`faq_load:${clinicId}`, err);
+      }
+    }
 
-  const canBook =
-    aiResult.ready_to_book === true && hasCompleteBookingDetails(aiResult.booking);
-
-  let actionDetails = '';
-  let bookingTriggered = false;
-
-  if (canBook) {
-    const bookedKey = `booked:${pageId}:${senderId}`;
-    const lockAcquired = await store.putIfAbsent(bookedKey, '1', {
-      ttlSeconds: BOOKED_GUARD_TTL_SECONDS,
+    const histKey = `hist:${pageId}:${senderId}`;
+    const history = (await store.get(histKey)) || [];
+    const systemPrompt = buildSystemPrompt({
+      clinicProfile: clinic.profile || {},
+      faqFormattedText: faqData.formattedText,
     });
 
-    if (lockAcquired) {
-      bookingTriggered = true;
-      const booking = aiResult.booking;
-      const durationMins = matchServiceDuration(booking.service, faqData.items);
-      const actionNotes = [];
-      let eventId = null;
+    const aiResult = await callGeminiJson({
+      apiKey: process.env.GEMINI_API_KEY,
+      model: getGeminiModel(),
+      systemPrompt,
+      history,
+      userText,
+    });
 
-      if (googleAccessToken) {
-        try {
-          eventId = await createCalendarBooking(
-            googleAccessToken,
-            (clinic.google && clinic.google.calendarId) || 'primary',
-            {
-              booking,
-              durationMins,
-              clinicAddress: clinic.profile && clinic.profile.address,
-            }
-          );
-          actionNotes.push(`Cal:${eventId}`);
-        } catch (calErr) {
-          console.error(`[clinicflow] Calendar error for ${clinicId}:`, calErr.message);
-          actionNotes.push(`CalErr:${calErr.message}`);
-        }
+    const booking = aiResult.booking || {};
+    const validMobile = isValidPhilippineMobile(booking.mobile_number);
+    const canBook = aiResult.ready_to_book === true && hasCompleteBookingDetails(booking);
 
-        if (spreadsheetId) {
+    let outgoingReply = aiResult.reply;
+    if (aiResult.ready_to_book === true && !validMobile) {
+      outgoingReply =
+        'Paki-check po ng mobile number ninyo (halimbawa 09171234567 o +639171234567) para ma-confirm namin ang booking.';
+    }
+
+    let actionDetails = '';
+    let bookingConfirmed = false;
+    let bookingWriteFailed = false;
+    let logLevel = 'INFO';
+    const tgBotToken = process.env.TELEGRAM_BOT_TOKEN;
+    const tgChatId = clinic.telegram && clinic.telegram.chatId;
+    const clinicLabel =
+      (clinic.profile && clinic.profile.name) || clinic.facebook.pageName || 'ClinicFlow PH';
+
+    if (canBook) {
+      const normalizedBooking = {
+        ...booking,
+        mobile_number: normalizePhilippineMobile(booking.mobile_number),
+      };
+      const bookedKey = `booked:${pageId}:${senderId}`;
+      const alreadyBooked = Boolean(await store.get(bookedKey));
+
+      if (alreadyBooked) {
+        actionDetails = 'Skipped repeat booking within 10-min guard';
+      } else {
+        const durationMins = matchServiceDuration(normalizedBooking.service, faqData.items);
+        const actionNotes = [];
+        let eventId = null;
+        let calendarOk = false;
+        let sheetOk = false;
+
+        if (googleAccessToken) {
           try {
-            await appendLeadRow(googleAccessToken, spreadsheetId, {
-              senderId,
-              booking,
-              eventId,
-            });
-            actionNotes.push('Sheet:OK');
-          } catch (sheetErr) {
-            console.error(`[clinicflow] Lead append error for ${clinicId}:`, sheetErr.message);
-            actionNotes.push(`SheetErr:${sheetErr.message}`);
+            eventId = await createCalendarBooking(
+              googleAccessToken,
+              (clinic.google && clinic.google.calendarId) || 'primary',
+              {
+                booking: normalizedBooking,
+                durationMins,
+                clinicAddress: clinic.profile && clinic.profile.address,
+              }
+            );
+            calendarOk = true;
+            actionNotes.push(`Cal:${eventId}`);
+          } catch (calErr) {
+            logServerError(`calendar_create:${clinicId}`, calErr);
+            actionNotes.push(`CalErr:${calErr.message}`);
+          }
+
+          if (spreadsheetId) {
+            try {
+              await appendLeadRow(googleAccessToken, spreadsheetId, {
+                senderId,
+                booking: normalizedBooking,
+                eventId,
+              });
+              sheetOk = true;
+              actionNotes.push('Sheet:OK');
+            } catch (sheetErr) {
+              logServerError(`lead_append:${clinicId}`, sheetErr);
+              actionNotes.push(`SheetErr:${sheetErr.message}`);
+            }
+          } else {
+            actionNotes.push('Sheet:NotLinked');
           }
         } else {
-          actionNotes.push('Sheet:NotLinked');
+          actionNotes.push('Google:NotLinked');
         }
-      } else {
-        actionNotes.push('Google:NotLinked');
-      }
 
-      const tgBotToken = process.env.TELEGRAM_BOT_TOKEN;
-      const tgChatId = clinic.telegram && clinic.telegram.chatId;
-      if (tgBotToken && tgChatId) {
-        try {
-          await sendTelegramBookingAlert(
-            tgBotToken,
-            tgChatId,
-            (clinic.profile && clinic.profile.name) || clinic.facebook.pageName,
-            booking,
-            eventId
-          );
-          actionNotes.push('TG:OK');
-        } catch (tgErr) {
-          console.error(`[clinicflow] Telegram alert error for ${clinicId}:`, tgErr.message);
-          actionNotes.push(`TGErr:${tgErr.message}`);
+        const anyRecordWritten = calendarOk || sheetOk;
+        if (anyRecordWritten) {
+          bookingConfirmed = true;
+          await store.put(bookedKey, '1', { ttlSeconds: BOOKED_GUARD_TTL_SECONDS });
+
+          if (tgBotToken && tgChatId) {
+            try {
+              await sendTelegramBookingAlert(
+                tgBotToken,
+                tgChatId,
+                clinicLabel,
+                normalizedBooking,
+                eventId
+              );
+              actionNotes.push('TG:OK');
+            } catch (tgErr) {
+              logServerError(`telegram_alert:${clinicId}`, tgErr);
+              actionNotes.push(`TGErr:${tgErr.message}`);
+            }
+          } else {
+            actionNotes.push('TG:NotLinked');
+          }
+        } else {
+          bookingWriteFailed = true;
+          logLevel = 'ERROR';
+          outgoingReply =
+            'Salamat po! Na-note namin ang details ninyo, pero hindi pa ito naisulat sa booking system ngayon. Magko-confirm po ang staff namin sa inyo sa text shortly.';
+          actionNotes.push('BookingFailed:NoRecordWritten');
+
+          if (tgBotToken && tgChatId) {
+            try {
+              await sendTelegramFailureAlert(
+                tgBotToken,
+                tgChatId,
+                clinicLabel,
+                normalizedBooking,
+                actionNotes.join(' | ')
+              );
+            } catch (tgErr) {
+              logServerError(`telegram_fail_alert:${clinicId}`, tgErr);
+            }
+          }
         }
-      } else {
-        actionNotes.push('TG:NotLinked');
-      }
 
-      actionDetails = actionNotes.join(' | ');
+        actionDetails = actionNotes.join(' | ');
+      }
+    }
+
+    // Send the Messenger reply BEFORE updating history / appending System_Logs.
+    await sendMessengerReply(clinic.facebook.pageAccessToken, senderId, outgoingReply);
+
+    if (bookingConfirmed) {
+      await store.del(histKey);
     } else {
-      actionDetails = 'Skipped repeat booking within 10-min guard';
+      const nextHistory = [
+        ...history,
+        { role: 'user', text: userText },
+        { role: 'model', text: outgoingReply },
+      ].slice(-MAX_HISTORY_MESSAGES);
+      await store.put(histKey, nextHistory, { ttlSeconds: HISTORY_TTL_SECONDS });
     }
-  }
 
-  if (bookingTriggered) {
-    await store.del(histKey);
-  } else {
-    const nextHistory = [
-      ...history,
-      { role: 'user', text: userText },
-      { role: 'model', text: aiResult.reply },
-    ].slice(-MAX_HISTORY_MESSAGES);
-    await store.put(histKey, nextHistory, { ttlSeconds: HISTORY_TTL_SECONDS });
-  }
-
-  if (googleAccessToken && spreadsheetId) {
-    try {
-      await appendSystemLog(googleAccessToken, spreadsheetId, {
-        level: 'INFO',
+    if (googleAccessToken && spreadsheetId) {
+      try {
+        await appendSystemLog(googleAccessToken, spreadsheetId, {
+          level: logLevel,
+          senderId,
+          userMsg: userText,
+          aiReply: outgoingReply,
+          readyToBook: canBook && !bookingWriteFailed,
+          details: actionDetails || aiResult.parseError || '',
+        });
+      } catch (logErr) {
+        logServerError(`system_logs_append:${clinicId}`, logErr);
+      }
+    } else if (bookingWriteFailed) {
+      await writeDeadLetterRecord(store, {
+        pageId,
         senderId,
-        userMsg: userText,
-        aiReply: aiResult.reply,
-        readyToBook: canBook,
-        details: actionDetails || aiResult.parseError || '',
+        messageId,
+        userText,
+        errorMessage: actionDetails,
       });
-    } catch (logErr) {
-      console.warn(`[clinicflow] System_Logs append failed for ${clinicId}:`, logErr.message);
     }
+
+    return {
+      status: 'replied',
+      clinicId,
+      ready_to_book: canBook && !bookingWriteFailed,
+      bookingTriggered: bookingConfirmed,
+      bookingWriteFailed,
+      actionDetails,
+      reply: outgoingReply,
+    };
+  } catch (err) {
+    if (dedupKey) {
+      await store.del(dedupKey).catch(() => {});
+    }
+    const ref = logServerError('process_messenger_event', err);
+
+    let loggedToSheet = false;
+    if (googleAccessToken && spreadsheetId) {
+      try {
+        await appendSystemLog(googleAccessToken, spreadsheetId, {
+          level: 'ERROR',
+          senderId,
+          userMsg: userText,
+          aiReply: '',
+          readyToBook: false,
+          details: `[${ref}] ${err.message}`,
+        });
+        loggedToSheet = true;
+      } catch (logErr) {
+        logServerError(`system_logs_error_row:${clinicId}`, logErr);
+      }
+    }
+
+    if (!loggedToSheet) {
+      await writeDeadLetterRecord(store, {
+        pageId,
+        senderId,
+        messageId,
+        userText,
+        errorMessage: `[${ref}] ${err.message}`,
+      });
+    }
+
+    throw err;
   }
-
-  await sendMessengerReply(clinic.facebook.pageAccessToken, senderId, aiResult.reply);
-
-  return {
-    status: 'replied',
-    clinicId,
-    ready_to_book: canBook,
-    bookingTriggered,
-    actionDetails,
-    reply: aiResult.reply,
-  };
 }
 
 function extractTelegramLinkingCode(text) {
@@ -465,15 +606,37 @@ async function handleTelegramUpdate({ update, store }) {
       await sendTelegramMessage(
         botToken,
         chatId,
-        'ClinicFlow server storage is not configured yet, so linking codes cannot be saved.'
+        'ClinicFlow server storage is not switched on yet, so linking codes cannot be saved.'
       );
     }
     return { status: 'setup_pending', reason: 'storage_unconfigured' };
   }
 
+  const failKey = `tg_fail:${chatId}`;
+  const failRecord = await store.get(failKey);
+  if (failRecord && Number(failRecord.count) >= TG_MAX_FAILED_ATTEMPTS) {
+    if (botToken) {
+      await sendTelegramMessage(
+        botToken,
+        chatId,
+        'Too many invalid code attempts. Please wait 15 minutes and generate a new code on ClinicFlow Connect.'
+      );
+    }
+    return { status: 'rate_limited', chatId };
+  }
+
   const linkKey = `tg_code:${code}`;
   const linkRecord = await store.get(linkKey);
-  if (!linkRecord || !linkRecord.clinicId) {
+  const isExpired =
+    linkRecord && linkRecord.expiresAt && new Date(linkRecord.expiresAt).getTime() <= Date.now();
+
+  if (!linkRecord || !linkRecord.clinicId || isExpired) {
+    if (isExpired) {
+      await store.del(linkKey);
+    }
+    const nextCount = (failRecord && Number(failRecord.count) ? Number(failRecord.count) : 0) + 1;
+    await store.put(failKey, { count: nextCount }, { ttlSeconds: TG_FAIL_WINDOW_SECONDS });
+
     if (botToken) {
       await sendTelegramMessage(
         botToken,
@@ -484,40 +647,40 @@ async function handleTelegramUpdate({ update, store }) {
     return { status: 'invalid_or_expired_code', code };
   }
 
-  if (linkRecord.expiresAt && new Date(linkRecord.expiresAt).getTime() <= Date.now()) {
-    await store.del(linkKey);
-    if (botToken) {
-      await sendTelegramMessage(
-        botToken,
-        chatId,
-        'That linking code has expired. Please generate a new one on ClinicFlow Connect.'
-      );
-    }
-    return { status: 'invalid_or_expired_code', code };
-  }
+  await store.del(failKey);
+  await store.del(linkKey);
 
-  const clinicKey = `clinic:${linkRecord.clinicId}`;
-  const existingClinic = (await store.get(clinicKey)) || {
-    clinicId: linkRecord.clinicId,
-    createdAt: new Date().toISOString(),
-  };
+  const clinicId = linkRecord.clinicId;
+  const oldTelegram = await clinicStore.getClinicSection(store, clinicId, 'telegram');
+  const [profile, facebook] = await Promise.all([
+    clinicStore.getClinicSection(store, clinicId, 'profile'),
+    clinicStore.getClinicSection(store, clinicId, 'facebook'),
+  ]);
 
-  existingClinic.telegram = {
+  const nextTelegram = {
     chatId,
     username: (msg.from && msg.from.username) || (msg.chat && msg.chat.username) || null,
     firstName: (msg.from && msg.from.first_name) || (msg.chat && msg.chat.first_name) || null,
     chatType: (msg.chat && msg.chat.type) || 'private',
     linkedAt: new Date().toISOString(),
   };
-  existingClinic.updatedAt = new Date().toISOString();
 
-  await store.put(clinicKey, existingClinic);
-  await store.del(linkKey);
+  await clinicStore.saveClinicSection(store, clinicId, 'telegram', nextTelegram);
 
   const clinicLabel =
-    (existingClinic.profile && existingClinic.profile.name) ||
-    (existingClinic.facebook && existingClinic.facebook.pageName) ||
-    'your clinic';
+    (profile && profile.name) || (facebook && facebook.pageName) || 'your clinic';
+
+  if (oldTelegram && oldTelegram.chatId && String(oldTelegram.chatId) !== chatId && botToken) {
+    try {
+      await sendTelegramMessage(
+        botToken,
+        String(oldTelegram.chatId),
+        `Heads up: Telegram booking alerts for ${clinicLabel} have been moved to a different Telegram chat.`
+      );
+    } catch (oldErr) {
+      logServerError(`telegram_old_chat_notice:${clinicId}`, oldErr);
+    }
+  }
 
   if (botToken) {
     await sendTelegramMessage(
@@ -529,7 +692,7 @@ async function handleTelegramUpdate({ update, store }) {
 
   return {
     status: 'linked',
-    clinicId: linkRecord.clinicId,
+    clinicId,
     chatId,
   };
 }
@@ -537,6 +700,8 @@ async function handleTelegramUpdate({ update, store }) {
 module.exports = {
   DEFAULT_GEMINI_MODEL,
   getGeminiModel,
+  normalizePhilippineMobile,
+  isValidPhilippineMobile,
   buildSystemPrompt,
   callGeminiJson,
   hasCompleteBookingDetails,

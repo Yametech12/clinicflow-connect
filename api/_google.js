@@ -1,6 +1,10 @@
 // ClinicFlow Connect: Google OAuth token refresh, Sheets, and Calendar helpers.
+const clinicStore = require('./_clinic');
+
 const TIMEZONE = 'Asia/Manila';
 const DEFAULT_DURATION_MINS = 45;
+const MAX_FAQ_ROWS = 100;
+const MAX_FAQ_CHARS = 6000;
 
 const SHEETS = {
   FAQ: 'FAQ_Prices',
@@ -222,19 +226,24 @@ async function getValidGoogleAccessToken(clinicId, clinic, store) {
     clientSecret,
   });
 
-  clinic.google = {
-    ...google,
+  // Merge latest stored :google section before persisting so concurrent writers are safe.
+  const latestGoogle =
+    (store && clinicId && (await clinicStore.getClinicSection(store, clinicId, 'google'))) ||
+    google;
+
+  const updatedGoogle = {
+    ...latestGoogle,
     accessToken: refreshed.access_token,
-    refreshToken: refreshed.refresh_token || google.refreshToken,
+    refreshToken: refreshed.refresh_token || latestGoogle.refreshToken,
     expiresAt: Date.now() + (Number(refreshed.expires_in) || 3600) * 1000,
   };
-  clinic.updatedAt = new Date().toISOString();
+  clinic.google = updatedGoogle;
 
   if (store && clinicId) {
-    await store.put(`clinic:${clinicId}`, clinic);
+    await clinicStore.saveClinicSection(store, clinicId, 'google', updatedGoogle);
   }
 
-  return clinic.google.accessToken;
+  return updatedGoogle.accessToken;
 }
 
 async function createClinicSpreadsheet(accessToken, clinicName) {
@@ -325,10 +334,12 @@ async function loadFaqPrices(accessToken, spreadsheetId) {
     return {
       items: [],
       formattedText: 'No services listed yet. Ask patient to message our receptionist for rates.',
+      truncated: false,
     };
   }
 
-  const range = encodeURIComponent(`${SHEETS.FAQ}!A2:D`);
+  // Request up to 101 rows (rows 2..102) so we can detect if more than 100 rows exist.
+  const range = encodeURIComponent(`${SHEETS.FAQ}!A2:D${MAX_FAQ_ROWS + 2}`);
   const data = await googleFetchJson(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
       spreadsheetId
@@ -338,38 +349,57 @@ async function loadFaqPrices(accessToken, spreadsheetId) {
     }
   );
 
-  const rows = Array.isArray(data.values) ? data.values : [];
-  if (rows.length === 0) {
+  const allRows = Array.isArray(data.values) ? data.values : [];
+  if (allRows.length === 0) {
     return {
       items: [],
       formattedText: 'No services listed yet. Ask patient to message our receptionist for rates.',
+      truncated: false,
     };
   }
 
+  let truncated = allRows.length > MAX_FAQ_ROWS;
+  const rows = allRows.slice(0, MAX_FAQ_ROWS);
   const items = [];
   const lines = [];
+  let charCount = 0;
 
   for (const row of rows) {
     const service = String(row[0] || '').trim();
     const price = String(row[1] || '').trim();
     const duration = Number(row[2]) || DEFAULT_DURATION_MINS;
     const notes = String(row[3] || '').trim();
-    if (service) {
-      items.push({ service, price, duration, notes });
-      lines.push(`- ${service}: ${price} (${duration} mins)${notes ? ' — ' + notes : ''}`);
+    if (!service) continue;
+
+    const line = `- ${service}: ${price} (${duration} mins)${notes ? ' - ' + notes : ''}`;
+    if (charCount + line.length + 1 > MAX_FAQ_CHARS) {
+      truncated = true;
+      break;
     }
+
+    items.push({ service, price, duration, notes });
+    lines.push(line);
+    charCount += line.length + 1;
   }
 
   if (items.length === 0) {
     return {
       items: [],
       formattedText: 'No services listed yet. Ask patient to message our receptionist for rates.',
+      truncated: false,
     };
+  }
+
+  if (truncated) {
+    lines.push(
+      '[Note: The service list above was truncated due to size limits. For unlisted items, politely ask the patient to wait for the receptionist.]'
+    );
   }
 
   return {
     items,
     formattedText: lines.join('\n'),
+    truncated,
   };
 }
 
@@ -465,7 +495,7 @@ async function createCalendarBooking(accessToken, calendarId, { booking, duratio
   const patientName = booking.patient_name || 'New Patient';
   const serviceName = booking.service || 'Dental Appointment';
   const titlePrefix = needsTimeVerification ? '[VERIFY TIME] ' : '[ClinicFlow] ';
-  const summary = `${titlePrefix}${patientName} — ${serviceName}`;
+  const summary = `${titlePrefix}${patientName} - ${serviceName}`;
 
   const description = [
     `Patient Name: ${patientName}`,
@@ -508,6 +538,8 @@ async function createCalendarBooking(accessToken, calendarId, { booking, duratio
 module.exports = {
   TIMEZONE,
   DEFAULT_DURATION_MINS,
+  MAX_FAQ_ROWS,
+  MAX_FAQ_CHARS,
   SHEETS,
   FAQ_HEADERS,
   LEAD_HEADERS,
