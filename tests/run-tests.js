@@ -1240,6 +1240,19 @@ function assertEq(a, b, msg) {
     assert(data.formattedText.includes('truncated'), 'truncation note in prompt text');
   });
 
+  // 20. GT-137 design gate: no side accent stripes in the shipped pages.
+  // border-left wider than 1px is banned in index.html and dashboard.html
+  // (1px hairline column rules inside ledger-style layouts stay allowed).
+  await test('design gate: no border-left wider than 1px in index.html or dashboard.html', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    for (const file of ['index.html', 'dashboard.html']) {
+      const css = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+      const hits = css.match(/border-left\s*:\s*(?:[2-9]|\d{2,})px/g) || [];
+      assertEq(hits.length, 0, file + ' has side accent stripes: ' + hits.join(', '));
+    }
+  });
+
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - failed.length}/${results.length} tests passed`);
   if (failed.length) {

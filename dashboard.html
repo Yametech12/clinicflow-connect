@@ -93,7 +93,7 @@
   a.seg{text-decoration:none;cursor:pointer}
   a.seg:hover .seg-label,a.seg:focus-visible .seg-label{color:var(--teal)}
   a.seg:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-  .seg-track{height:6px;border-radius:999px;background:var(--line);overflow:hidden}
+  .seg-track{height:6px;border-radius:2px;background:var(--line);overflow:hidden}
   .seg-fill{height:100%;width:0;background:var(--teal);transition:width .25s ease}
   .seg.done .seg-fill{width:100%}
   .seg-label{font-size:11.5px;font-weight:600;color:var(--muted)}
@@ -128,10 +128,10 @@
   .shell-line.w40{width:40%}
   .shell-retry{margin-top:22px;max-width:560px}
   .shell-retry p{font-size:14.5px;margin-bottom:12px}
-  .dash-h1{font-family:Georgia,"Times New Roman",serif;font-size:24px;padding:30px 0 0}
+  .dash-h1{font-family:Georgia,"Times New Roman",serif;font-size:28px;padding:30px 0 0}
   .welcomebox{
     margin:16px 0 0;background:var(--card);border:1px solid var(--line);
-    border-left:4px solid var(--teal);padding:16px 18px;font-size:14.5px;
+    border-top:2px solid var(--rule);padding:16px 18px;font-size:14.5px;
   }
   section{padding:36px 0 0;scroll-margin-top:76px}
   h2{font-family:Georgia,"Times New Roman",serif;font-size:24px;margin-bottom:6px}
@@ -169,7 +169,7 @@
   .return-banner.show{display:block}
   .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px}
   .card{
-    background:var(--card);border:1px solid var(--line);border-top:4px solid var(--teal);
+    background:var(--card);border:1px solid var(--line);border-top:2px solid var(--rule);
     padding:20px;display:flex;flex-direction:column;gap:10px;
   }
   .stepnum{font-size:12px;font-weight:700;letter-spacing:2px;color:var(--teal)}
@@ -177,7 +177,7 @@
   .card p.cardbody{font-size:14px;color:var(--muted);flex:1}
   .safety-line{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:8px}
   .pill{
-    display:inline-block;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;
+    display:inline-block;font-size:12px;font-weight:700;padding:3px 10px;border-radius:2px;
     background:var(--gray-bg);color:var(--muted);align-self:flex-start;
   }
   .pill.checking{animation:pillPulse 1.2s ease-in-out infinite}
@@ -215,10 +215,11 @@
   .tgcode a{color:var(--teal);font-weight:600}
   .pilotbox{
     margin-top:16px;background:var(--card);border:1px solid var(--line);
-    border-left:4px solid var(--teal);padding:20px 22px;display:flex;flex-direction:column;gap:8px;
+    border-top:2px solid var(--rule);padding:20px 22px;display:flex;flex-direction:column;gap:8px;
   }
-  .pilotbox.live{border-left-color:var(--green)}
+  .pilotbox.live{border-top-color:var(--green)}
   .pilot-grid{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:center}
+  .pilot-priceblock{border-left:1px solid var(--line);padding-left:24px}
   .pilot-text{display:flex;flex-direction:column;gap:8px}
   .pilot-price{font-family:Georgia,"Times New Roman",serif;font-size:34px;font-weight:700;line-height:1.1}
   .pilot-price-cap{font-size:12.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-top:2px}
@@ -231,7 +232,7 @@
   .statusbox h3{font-family:Georgia,"Times New Roman",serif;font-size:17px;margin-bottom:8px}
   .status-summary{
     font-size:14px;color:var(--status-ink);background:rgba(255,255,255,.06);
-    padding:9px 12px;border-radius:4px;margin-bottom:10px;display:none;
+    padding:9px 12px;border-radius:2px;margin-bottom:10px;display:none;
   }
   .status-summary.show{display:block}
   .statusbox ul{list-style:none;font-size:14px}
@@ -245,7 +246,8 @@
   .bookingsbox{
     margin-top:16px;background:var(--card);border:1px solid var(--line);padding:20px 22px;
   }
-  .bookingsbox.warn{border-left:4px solid var(--amber)}
+  .bookingsbox.warn{background:var(--amber-bg)}
+  .bookingsbox.warn .bookings-note{color:var(--amber);font-weight:600}
   .bookings-note{font-size:14px;color:var(--muted)}
   .bookings-note .dot{margin-right:8px}
   .bookings-list{list-style:none}
@@ -263,6 +265,7 @@
     form.profile{grid-template-columns:1fr}
     .formactions{flex-direction:column;align-items:stretch;gap:10px}
     .pilot-grid{grid-template-columns:1fr}
+    .pilot-priceblock{border-left:none;border-top:1px solid var(--line);padding:14px 0 0}
   }
 </style>
 </head>
