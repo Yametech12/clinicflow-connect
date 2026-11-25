@@ -64,7 +64,10 @@ const webhookHandler = require('../api/webhook');
 const clinicHandler = require('../api/clinic');
 const healthHandler = require('../api/health');
 const connectTelegram = require('../api/connect/telegram');
+const connectGoogle = require('../api/connect/google');
+const connectFacebook = require('../api/connect/facebook');
 const callbackGoogle = require('../api/callback/google');
+const callbackFacebook = require('../api/callback/facebook');
 const logoutHandler = require('../api/logout');
 const bookingsHandler = require('../api/bookings');
 
@@ -109,6 +112,20 @@ global.fetch = async (url, options = {}) => {
   if (u.includes('graph.facebook.com') && u.includes('/me/messages')) {
     return jsonResponse(200, { recipient_id: 'x', message_id: 'm' });
   }
+  if (u.includes('graph.facebook.com') && u.includes('/oauth/access_token')) {
+    return jsonResponse(200, { access_token: 'mock_fb_user_token', token_type: 'bearer', expires_in: 5184000 });
+  }
+  if (u.includes('graph.facebook.com') && u.includes('/me/accounts')) {
+    return jsonResponse(200, {
+      data: [
+        { id: 'page_2001', name: 'Clinic Page One', access_token: 'pat_one' },
+        { id: 'page_2002', name: 'Clinic Page Two', access_token: 'pat_two' },
+      ],
+    });
+  }
+  if (u.includes('graph.facebook.com') && u.includes('/subscribed_apps')) {
+    return jsonResponse(200, { success: true });
+  }
   if (u.includes('oauth2.googleapis.com/token')) {
     if (googleTokenBehavior.mode === 'fail') {
       return jsonResponse(500, { error: { message: 'mock token endpoint failure' } });
@@ -120,6 +137,9 @@ global.fetch = async (url, options = {}) => {
     });
   }
   if (u.includes('oauth2/v2/userinfo')) {
+    if (userinfoBehavior.mode === 'fail') {
+      return jsonResponse(500, { error: { message: 'mock userinfo failure' } });
+    }
     return jsonResponse(200, { email: userinfoBehavior.email, sub: userinfoBehavior.sub });
   }
   if (/sheets\.googleapis\.com\/v4\/spreadsheets\/?$/.test(u) && options.method === 'POST') {
@@ -582,7 +602,7 @@ function assertEq(a, b, msg) {
   });
 
   // 16. Clinic identity lockdown
-  await test('clinic identity: query-string id ignored, POST needs cf_key, legacy session binds key on GET', async () => {
+  await test('clinic identity: query-string id ignored, POST needs cf_key', async () => {
     const { clinicId, key } = await seedClinic({ withGoogle: true });
 
     // GET with ?clinic_id= but no cookies must NOT return that clinic's data
@@ -619,7 +639,10 @@ function assertEq(a, b, msg) {
     assertEq(res.statusCode, 200, 'POST with correct key saves');
     assertEq(res.body.status, 'saved', 'saved status');
 
-    // Legacy clinic (v1 record, no keyHash): GET with only cf_clinic cookie binds a cf_key
+  });
+
+  // 16b. GT-136 A3: GET /api/clinic never binds a key on a read path
+  await test('clinic GET never binds a key: legacy record stays unbound, fields redacted', async () => {
     const legacyId = session.createClinicId();
     await store.put(`clinic:${legacyId}`, {
       profile: { name: 'V1 Clinic', address: '', hours: '', timezone: 'Asia/Manila' },
@@ -627,27 +650,18 @@ function assertEq(a, b, msg) {
       createdAt: '2026-11-24T00:00:00.000Z',
       updatedAt: '2026-11-24T00:00:00.000Z',
     });
-    res = makeRes();
+    const res = makeRes();
     await clinicHandler(
       makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: `cf_clinic=${legacyId}` } }),
       res
     );
+    assertEq(res.body.authenticated, false, 'legacy id-only session is not authenticated');
+    assertEq(res.body.connections.google.email, null, 'legacy clinic email stays redacted on GET');
     const setCookie = res.headers['set-cookie'];
     const cookieStr = Array.isArray(setCookie) ? setCookie.join(';') : String(setCookie || '');
-    assert(cookieStr.includes('cf_key='), 'cf_key cookie issued for legacy session');
-    assertEq(res.body.connections.google.email, 'v1@example.com', 'legacy clinic sees its own sensitive fields after bind');
-    // And the issued key can now POST
-    const issuedKey = cookieStr.match(/cf_key=([^;]+)/)[1];
-    res = makeRes();
-    await clinicHandler(
-      makeReq({
-        method: 'POST',
-        headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: `cf_clinic=${legacyId}; cf_key=${decodeURIComponent(issuedKey)}` },
-        body: { name: 'V1 Clinic Updated' },
-      }),
-      res
-    );
-    assertEq(res.statusCode, 200, 'legacy clinic can save after key bind');
+    assert(!cookieStr.includes('cf_key='), 'no cf_key cookie issued by a GET');
+    const meta = await clinicStore.getClinicSection(store, legacyId, 'meta');
+    assert(!meta || !meta.keyHash, 'record still has no keyHash after GET (binding is callbacks-only)');
   });
 
   // 17. Health endpoint: public minimal, admin probe detailed
@@ -828,8 +842,8 @@ function assertEq(a, b, msg) {
     assertEq(res.body.connections.google.bound, true, 'bound flag true');
   });
 
-  // 23. GT-135: logout clears both session cookies and redirects to /
-  await test('logout: clears cf_clinic and cf_key, redirects to landing', async () => {
+  // 23. GT-135 + GT-136 A4: logout clears cookies, redirects, and rotates the key server-side
+  await test('logout: clears cookies, redirects, old key pair dies server-side', async () => {
     const res = makeRes();
     await logoutHandler(
       makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: 'cf_clinic=cln_x; cf_key=abc' } }),
@@ -842,6 +856,34 @@ function assertEq(a, b, msg) {
     assert(cookieStr.includes('cf_clinic='), 'cf_clinic cleared');
     assert(cookieStr.includes('cf_key='), 'cf_key cleared');
     assert((cookieStr.match(/Max-Age=0/g) || []).length >= 2, 'both cookies expired');
+
+    // Rotation: a bound clinic logs out (POST also accepted); the captured
+    // cookie pair must stop working everywhere afterwards.
+    const { clinicId, key } = await seedClinic({ withGoogle: true });
+    const g = await clinicStore.getClinicSection(store, clinicId, 'google');
+    await clinicStore.saveClinicSection(store, clinicId, 'google', { ...g, googleSub: 'sub_owner_1' });
+    const pair = `cf_clinic=${clinicId}; cf_key=${key}`;
+    const hashBefore = (await clinicStore.getClinicSection(store, clinicId, 'meta')).keyHash;
+    const loRes = makeRes();
+    await logoutHandler(
+      makeReq({ method: 'POST', headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: pair } }),
+      loRes
+    );
+    assertEq(loRes.statusCode, 302, 'POST logout redirects');
+    const metaAfter = await clinicStore.getClinicSection(store, clinicId, 'meta');
+    assert(metaAfter.keyHash && metaAfter.keyHash !== hashBefore, 'keyHash rotated on logout');
+    const postRes = makeRes();
+    await clinicHandler(
+      makeReq({ method: 'POST', headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: pair }, body: { name: 'Nope' } }),
+      postRes
+    );
+    assertEq(postRes.statusCode, 403, 'old key pair cannot save after logout');
+    const bkRes = makeRes();
+    await bookingsHandler(
+      makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: pair } }),
+      bkRes
+    );
+    assertEq(bkRes.statusCode, 401, 'old key pair cannot read bookings after logout');
   });
 
   // 24. GT-135: recent bookings read (rows, empty, no sheet, refresh failure)
@@ -902,6 +944,291 @@ function assertEq(a, b, msg) {
       res
     );
     assertEq(res.body.status, 'no_sheet', 'bound clinic without sheet reports no_sheet');
+  });
+
+  // 25. GT-136 A1: id-only cookie gets 403 from all three connect endpoints
+  await test('connect gate: id-only cookie -> 403 on google, facebook, telegram connect', async () => {
+    const { clinicId, key } = await seedClinic();
+    const idOnly = { host: 'x.example', 'x-forwarded-proto': 'https', cookie: `cf_clinic=${clinicId}` };
+    let res = makeRes();
+    await connectGoogle(makeReq({ headers: idOnly }), res);
+    assertEq(res.statusCode, 403, 'google connect id-only 403');
+    assertEq(res.body.code, 'INVALID_SESSION', 'google connect code');
+    res = makeRes();
+    await connectFacebook(makeReq({ headers: idOnly }), res);
+    assertEq(res.statusCode, 403, 'facebook connect id-only 403');
+    assertEq(res.body.code, 'INVALID_SESSION', 'facebook connect code');
+    res = makeRes();
+    await connectTelegram(makeReq({ headers: idOnly }), res);
+    assertEq(res.statusCode, 403, 'telegram connect id-only 403');
+    assert(![...adapter.map.keys()].some((k) => k.startsWith('tg_code:')), 'no linking code minted for id-only session');
+    // The full pair still works.
+    res = makeRes();
+    await connectGoogle(
+      makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: `cf_clinic=${clinicId}; cf_key=${key}` } }),
+      res
+    );
+    assertEq(res.body.status, 'ready', 'valid key pair still gets the OAuth URL');
+  });
+
+  // 26. GT-136 A2: bookings requires cf_key proof on a bound clinic
+  await test('bookings gate: bound clinic with id-only or wrong-key cookie -> 401', async () => {
+    const { clinicId, key } = await seedClinic({ withGoogle: true });
+    const g = await clinicStore.getClinicSection(store, clinicId, 'google');
+    await clinicStore.saveClinicSection(store, clinicId, 'google', { ...g, googleSub: 'sub_owner_1' });
+    let res = makeRes();
+    await bookingsHandler(
+      makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: `cf_clinic=${clinicId}` } }),
+      res
+    );
+    assertEq(res.statusCode, 401, 'id-only cookie gets 401');
+    res = makeRes();
+    await bookingsHandler(
+      makeReq({
+        headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: `cf_clinic=${clinicId}; cf_key=${session.createClinicKey()}` },
+      }),
+      res
+    );
+    assertEq(res.statusCode, 401, 'wrong key gets 401');
+    res = makeRes();
+    await bookingsHandler(
+      makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: `cf_clinic=${clinicId}; cf_key=${key}` } }),
+      res
+    );
+    assertEq(res.statusCode, 200, 'valid key pair reads bookings');
+  });
+
+  // 27. GT-136 A5: adoption never moves the facebook section; profile/telegram still carry
+  await test('adoption: facebook section stays with source clinic, profile and telegram carry over', async () => {
+    userinfoBehavior.sub = 'sub_adopter';
+    const clinicA = session.createClinicId();
+    const keyA = session.createClinicKey();
+    await clinicStore.saveClinicSection(store, clinicA, 'meta', {
+      clinicId: clinicA, keyHash: session.hashClinicKey(keyA),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await clinicStore.saveClinicSection(store, clinicA, 'google', {
+      email: 'clinic.owner@example.com', googleSub: 'sub_adopter',
+      accessToken: 'old_access', refreshToken: 'mock_refresh', expiresAt: 0,
+      spreadsheetId: 'sheet_A', spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sheet_A',
+      calendarId: 'primary', connectedAt: new Date().toISOString(),
+    });
+    await clinicStore.bindGoogleSub(store, 'sub_adopter', clinicA);
+
+    const clinicB = session.createClinicId();
+    await clinicStore.saveClinicSection(store, clinicB, 'profile', {
+      name: 'Browser Clinic', address: 'Somewhere', hours: '9-5', timezone: 'Asia/Manila',
+    });
+    await clinicStore.saveClinicSection(store, clinicB, 'facebook', {
+      pageId: 'page_B', pageName: 'Browser Page', pageAccessToken: 'tok_B',
+      subscribed: true, connectedAt: new Date().toISOString(),
+    });
+    await store.put('fb_page:page_B', { clinicId: clinicB });
+    await clinicStore.saveClinicSection(store, clinicB, 'telegram', {
+      chatId: '555000', username: 'owner', firstName: 'Owner', linkedAt: new Date().toISOString(),
+    });
+
+    const state = session.signState(clinicB, 'google', process.env.GOOGLE_CLIENT_SECRET);
+    const res = makeRes();
+    await callbackGoogle(
+      makeReq({
+        query: { code: 'mock_code', state },
+        headers: { accept: 'text/html', host: 'clinicflow-connect-two.vercel.app', 'x-forwarded-proto': 'https' },
+      }),
+      res
+    );
+    assertEq(res.statusCode, 302, 'adoption callback redirects');
+    const aFacebook = await clinicStore.getClinicSection(store, clinicA, 'facebook');
+    assertEq(aFacebook, null, 'adopted record did NOT gain the facebook section');
+    const fbIndex = await store.get('fb_page:page_B');
+    assertEq(fbIndex.clinicId, clinicB, 'fb_page index still routes to the source clinic');
+    const aProfile = await clinicStore.getClinicSection(store, clinicA, 'profile');
+    assertEq(aProfile.name, 'Browser Clinic', 'profile carry-over still works for unbound source');
+    const aTelegram = await clinicStore.getClinicSection(store, clinicA, 'telegram');
+    assertEq(aTelegram.chatId, '555000', 'telegram carry-over still works for unbound source');
+  });
+
+  // 28. GT-136 A5: carry-over skipped entirely when the source clinic is bound to another account
+  await test('adoption: carry-over skipped when source clinic is bound to a different Google account', async () => {
+    userinfoBehavior.sub = 'sub_adopter2';
+    const clinicA = session.createClinicId();
+    await clinicStore.saveClinicSection(store, clinicA, 'google', {
+      email: 'a@example.com', googleSub: 'sub_adopter2',
+      accessToken: 'old_access', refreshToken: 'mock_refresh', expiresAt: 0,
+      spreadsheetId: 'sheet_A2', spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sheet_A2',
+      calendarId: 'primary', connectedAt: new Date().toISOString(),
+    });
+    await clinicStore.bindGoogleSub(store, 'sub_adopter2', clinicA);
+
+    const clinicB = session.createClinicId();
+    await clinicStore.saveClinicSection(store, clinicB, 'google', {
+      email: 'b@example.com', googleSub: 'sub_someone_else',
+      accessToken: 'tok_b', refreshToken: 'ref_b', expiresAt: 0,
+      spreadsheetId: 'sheet_B2', spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sheet_B2',
+      calendarId: 'primary', connectedAt: new Date().toISOString(),
+    });
+    await clinicStore.saveClinicSection(store, clinicB, 'profile', {
+      name: 'Other Clinic', address: '', hours: '', timezone: 'Asia/Manila',
+    });
+
+    const state = session.signState(clinicB, 'google', process.env.GOOGLE_CLIENT_SECRET);
+    const res = makeRes();
+    await callbackGoogle(
+      makeReq({
+        query: { code: 'mock_code', state },
+        headers: {
+          accept: 'text/html', host: 'clinicflow-connect-two.vercel.app', 'x-forwarded-proto': 'https',
+          cookie: `cf_clinic=${clinicB}; cf_key=${session.createClinicKey()}`,
+        },
+      }),
+      res
+    );
+    // Adoption itself is legitimate (the signer proved control of the
+    // account that owns clinic A), but because the source clinic is bound
+    // to a different Google account, carry-over is skipped entirely.
+    assertEq(res.statusCode, 302, 'adoption proceeds for the account owner');
+    const aProfile = await clinicStore.getClinicSection(store, clinicA, 'profile');
+    assertEq(aProfile, null, 'nothing carried into the adopted record');
+    const bProfile = await clinicStore.getClinicSection(store, clinicB, 'profile');
+    assertEq(bProfile.name, 'Other Clinic', 'source clinic record untouched');
+  });
+
+  // 29. GT-136 A8: Google account switch clears the stored spreadsheet pointer
+  await test('google account switch: spreadsheetId cleared and re-provisioned under the new account', async () => {
+    const { clinicId, key } = await seedClinic();
+    await clinicStore.saveClinicSection(store, clinicId, 'google', {
+      email: 'old@example.com', googleSub: 'sub_old_account',
+      accessToken: 'old_access', refreshToken: 'mock_refresh', expiresAt: 0,
+      spreadsheetId: 'sheet_old', spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sheet_old',
+      calendarId: 'primary', connectedAt: new Date().toISOString(),
+    });
+    await clinicStore.bindGoogleSub(store, 'sub_old_account', clinicId);
+    userinfoBehavior = { sub: 'sub_new_account', email: 'new@example.com' };
+    const state = session.signState(clinicId, 'google', process.env.GOOGLE_CLIENT_SECRET);
+    const res = makeRes();
+    await callbackGoogle(
+      makeReq({
+        query: { code: 'mock_code', state },
+        headers: {
+          accept: 'text/html', host: 'clinicflow-connect-two.vercel.app', 'x-forwarded-proto': 'https',
+          cookie: `cf_clinic=${clinicId}; cf_key=${key}`,
+        },
+      }),
+      res
+    );
+    assertEq(res.statusCode, 302, 'account switch callback redirects');
+    const g = await clinicStore.getClinicSection(store, clinicId, 'google');
+    assertEq(g.googleSub, 'sub_new_account', 'record now bound to the new account');
+    assertEq(g.email, 'new@example.com', 'email updated to the new account');
+    assertEq(g.spreadsheetId, 'sheet_created_1', 'fresh sheet provisioned under the new account');
+    assertEq(await clinicStore.getClinicIdByGoogleSub(store, 'sub_old_account'), null, 'old sub index removed');
+    assertEq(await clinicStore.getClinicIdByGoogleSub(store, 'sub_new_account'), clinicId, 'new sub index points at the clinic');
+  });
+
+  // 30. GT-136 A8: userinfo failure surfaces an error and stores nothing
+  await test('google callback: userinfo failure -> error page, no tokens stored, no binding', async () => {
+    userinfoBehavior = { mode: 'fail', sub: null, email: null };
+    const clinicId = session.createClinicId();
+    const state = session.signState(clinicId, 'google', process.env.GOOGLE_CLIENT_SECRET);
+    const res = makeRes();
+    await callbackGoogle(
+      makeReq({
+        query: { code: 'mock_code', state },
+        headers: { accept: 'text/html', host: 'clinicflow-connect-two.vercel.app', 'x-forwarded-proto': 'https' },
+      }),
+      res
+    );
+    assertEq(res.statusCode, 500, 'userinfo failure is an error, not a silent success');
+    assert(String(res.body).includes('Google connection failed'), 'deck error page rendered');
+    const g = await clinicStore.getClinicSection(store, clinicId, 'google');
+    assertEq(g, null, 'no google section stored when identity is unknown');
+  });
+
+  // 31. GT-136 A6: Facebook Page selection is POST-only and session-bound
+  await test('facebook selection: GET cannot complete, wrong session POST refused, owner POST connects', async () => {
+    const { clinicId, key } = await seedClinic();
+    const pair = `cf_clinic=${clinicId}; cf_key=${key}`;
+    const state = session.signState(clinicId, 'facebook', process.env.META_APP_SECRET);
+    let res = makeRes();
+    await callbackFacebook(
+      makeReq({
+        query: { code: 'mock_code', state },
+        headers: { accept: 'text/html', host: 'x.example', 'x-forwarded-proto': 'https', cookie: pair },
+      }),
+      res
+    );
+    assertEq(res.statusCode, 200, 'picker page renders');
+    const m = String(res.body).match(/name="selection_token" value="([^"]+)"/);
+    assert(m, 'selection token present in picker form');
+    const token = m[1];
+
+    // GET with the token in the URL must NOT complete the connection.
+    res = makeRes();
+    await callbackFacebook(
+      makeReq({
+        query: { selection_token: token, page_id: 'page_2001' },
+        headers: { accept: 'text/html', host: 'x.example', 'x-forwarded-proto': 'https', cookie: pair },
+      }),
+      res
+    );
+    assertEq(res.statusCode, 400, 'GET completion refused');
+    assertEq(await clinicStore.getClinicSection(store, clinicId, 'facebook') && (await clinicStore.getClinicSection(store, clinicId, 'facebook')).pageId, 'page_1001', 'facebook section untouched by GET attempt');
+
+    // POST from a different session is refused.
+    const other = await seedClinic();
+    res = makeRes();
+    await callbackFacebook(
+      makeReq({
+        method: 'POST',
+        headers: {
+          accept: 'text/html', host: 'x.example', 'x-forwarded-proto': 'https',
+          cookie: `cf_clinic=${other.clinicId}; cf_key=${other.key}`,
+        },
+        body: { selection_token: token, page_id: 'page_2001' },
+      }),
+      res
+    );
+    assertEq(res.statusCode, 403, 'foreign session POST refused');
+
+    // POST from the initiating session connects.
+    res = makeRes();
+    await callbackFacebook(
+      makeReq({
+        method: 'POST',
+        headers: { accept: 'text/html', host: 'x.example', 'x-forwarded-proto': 'https', cookie: pair },
+        body: { selection_token: token, page_id: 'page_2001' },
+      }),
+      res
+    );
+    assertEq(res.statusCode, 302, 'owner POST redirects');
+    assertEq(res.headers.location, '/dashboard?connected=facebook', 'redirect to dashboard');
+    const fb = await clinicStore.getClinicSection(store, clinicId, 'facebook');
+    assertEq(fb.pageId, 'page_2001', 'chosen page stored');
+    const idx = await store.get('fb_page:page_2001');
+    assertEq(idx.clinicId, clinicId, 'fb_page index points at the clinic');
+  });
+
+  // 32. GT-136 A7: bookings read range is bounded
+  await test('bookings read: outbound range capped, 5000-row sheet returns newest 10', async () => {
+    const { clinicId, key } = await seedClinic({ withGoogle: true });
+    const g = await clinicStore.getClinicSection(store, clinicId, 'google');
+    await clinicStore.saveClinicSection(store, clinicId, 'google', { ...g, googleSub: 'sub_owner_1' });
+    const mkRow = (n) => [
+      '2026-11-25 09:00:00', 'psid_x', `Patient ${n}`, '09171234567',
+      'Cleaning', 'Nov 26 2pm', '', 'CONFIRMED', 'evt', '',
+    ];
+    global.__leadRows = Array.from({ length: 5000 }, (_, i) => mkRow(i + 1));
+    const res = makeRes();
+    await bookingsHandler(
+      makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: `cf_clinic=${clinicId}; cf_key=${key}` } }),
+      res
+    );
+    assertEq(res.body.status, 'ok', 'bookings ok');
+    assertEq(res.body.bookings.length, 10, 'still capped at 10 rows');
+    assertEq(res.body.bookings[0].patient_name, 'Patient 5000', 'newest row first');
+    const readCall = fetchLog.find((c) => c.url.includes('Leads_Bookings') && c.url.includes('/values/'));
+    assert(readCall, 'sheet read happened');
+    assert(decodeURIComponent(readCall.url).includes('Leads_Bookings!A2:J5001'), 'range bounded at row 5001, got: ' + readCall.url);
   });
 
   // 19. FAQ cap: 250 rows -> at most 100 items + truncation note

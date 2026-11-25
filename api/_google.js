@@ -449,9 +449,16 @@ async function appendSheetRowWithTabFallback(accessToken, spreadsheetId, tabName
 // Read-only: the most recent rows of Leads_Bookings for the clinic dashboard.
 // Returns at most `limit` bookings, newest first, mapped to panel fields.
 // Never invents rows: an empty sheet returns an empty array.
+// GT-136 A7: the bookings read is bounded to a capped tail window of the
+// sheet (rows 2..5001, i.e. at most 5000 data rows) instead of the entire
+// Leads_Bookings range, so dashboard loads stay flat as a clinic's lifetime
+// bookings grow. Bookings beyond that ceiling are not shown in the recent
+// list; the sheet itself remains the full record.
+const BOOKINGS_READ_MAX_ROW = 5001;
+
 async function readRecentBookings(accessToken, spreadsheetId, limit = 10) {
   if (!accessToken || !spreadsheetId) return [];
-  const range = encodeURIComponent(`${SHEETS.LEADS}!A2:J`);
+  const range = encodeURIComponent(`${SHEETS.LEADS}!A2:J${BOOKINGS_READ_MAX_ROW}`);
   const data = await googleFetchJson(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
       spreadsheetId

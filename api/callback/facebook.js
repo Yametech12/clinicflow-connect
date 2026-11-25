@@ -8,6 +8,8 @@ const clinicStore = require('../_clinic');
 const {
   getOAuthBaseUrl,
   getClinicIdFromRequest,
+  getClinicKeyFromRequest,
+  verifyClinicKeyHash,
   createClinicKey,
   hashClinicKey,
   setClinicCookie,
@@ -177,14 +179,16 @@ module.exports = async (req, res) => {
 
   try {
     // Handle Step 2 when user picked one of multiple Pages.
-    if (req.method === 'POST' || (req.query && req.query.selection_token && req.query.page_id)) {
-      const body = req.method === 'POST' ? await readRequestBody(req) : {};
-      const selectionToken = String(
-        body.selection_token || (req.query && req.query.selection_token) || ''
-      ).trim();
-      const chosenPageId = String(
-        body.page_id || (req.query && req.query.page_id) || ''
-      ).trim();
+    // GT-136 A6: completion is POST-only (a GET carrying the token in the
+    // URL falls through to the OAuth branch and fails there, so the token
+    // never lands in a completable URL), and the pending record is bound
+    // to the session that started the flow: the request must present that
+    // clinic's cf_clinic cookie plus a cf_key matching the keyHash stored
+    // in the pending record at creation time.
+    if (req.method === 'POST') {
+      const body = await readRequestBody(req);
+      const selectionToken = String(body.selection_token || '').trim();
+      const chosenPageId = String(body.page_id || '').trim();
 
       if (!selectionToken || !chosenPageId) {
         return sendError(
@@ -205,6 +209,20 @@ module.exports = async (req, res) => {
           400,
           'Selection expired',
           'Your Page selection took too long and expired. Please reconnect Facebook from the home page and pick your Page again.'
+        );
+      }
+
+      if (
+        pending.keyHash &&
+        (getClinicIdFromRequest(req) !== pending.clinicId ||
+          !verifyClinicKeyHash(getClinicKeyFromRequest(req), pending.keyHash))
+      ) {
+        return sendError(
+          req,
+          res,
+          403,
+          'That sign-in link expired',
+          'For your safety, each sign-in link works only once and only for a short time. Please return to the ClinicFlow page and tap the connect button again.'
         );
       }
 
@@ -263,6 +281,27 @@ module.exports = async (req, res) => {
     }
 
     const clinicId = stateCheck.clinicId;
+
+    // GT-136 A1: before any Page token is stored on this clinic, the
+    // caller must own it: a cf_key matching its keyHash, or a genuine
+    // first bind (no keyHash stored yet; ensureMetaRecordOnCallback then
+    // issues the key inside this callback, the only place keys bind).
+    const stateMeta = await clinicStore.getClinicSection(store, clinicId, 'meta');
+    if (
+      stateMeta &&
+      stateMeta.keyHash &&
+      (getClinicIdFromRequest(req) !== clinicId ||
+        !verifyClinicKeyHash(getClinicKeyFromRequest(req), stateMeta.keyHash))
+    ) {
+      return sendError(
+        req,
+        res,
+        400,
+        'That sign-in link expired',
+        'For your safety, each sign-in link works only once and only for a short time. Please return to the ClinicFlow page and tap the connect button again.'
+      );
+    }
+
     const origin = getOAuthBaseUrl(req);
     const redirectUri = `${origin}/api/callback/facebook`;
 
@@ -339,11 +378,16 @@ module.exports = async (req, res) => {
     }
 
     // Multiple Pages: persist temporary choices server-side (never expose Page tokens in HTML/JSON).
+    // GT-136 A6: ensure the clinic has a key first, then bind the pending
+    // record to this session by storing the record's keyHash in it.
+    await ensureMetaRecordOnCallback(req, res, clinicId);
+    const boundMeta = await clinicStore.getClinicSection(store, clinicId, 'meta');
     const selectionToken = crypto.randomBytes(16).toString('base64url');
     await store.put(
       `fb_pending:${selectionToken}`,
       {
         clinicId,
+        keyHash: (boundMeta && boundMeta.keyHash) || null,
         pages: pages.map((p) => ({
           id: String(p.id),
           name: String(p.name || p.id),
@@ -353,7 +397,6 @@ module.exports = async (req, res) => {
       },
       { ttlSeconds: 600 }
     );
-    await ensureMetaRecordOnCallback(req, res, clinicId);
 
     if (!isHtml) {
       return res.status(200).json({

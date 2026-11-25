@@ -1,14 +1,20 @@
 // ClinicFlow Connect: recent bookings for the client dashboard.
 // GET only. Requires a clinic session whose record is bound to a Google
-// account (googleSub set by the Google login callback); anything else gets
-// 401 login_required and the dashboard sends the visitor to log in.
+// account (googleSub set by the Google login callback) AND that proves the
+// record's cf_key; anything else gets 401 login_required and the dashboard
+// sends the visitor to log in.
 // Reads the clinic's own Leads_Bookings sheet with its stored Google
 // credentials (refreshing the access token when needed). Read-only: this
 // endpoint never writes to the sheet, the calendar, or any clinic section
 // except the token refresh merge inside getValidGoogleAccessToken.
 const store = require('./_store');
 const clinicStore = require('./_clinic');
-const { getClinicIdFromRequest, logServerError } = require('./_session');
+const {
+  getClinicIdFromRequest,
+  getClinicKeyFromRequest,
+  verifyClinicKeyHash,
+  logServerError,
+} = require('./_session');
 const { getValidGoogleAccessToken, readRecentBookings } = require('./_google');
 
 const MSG_GOOGLE_UNAVAILABLE =
@@ -30,6 +36,14 @@ module.exports = async (req, res) => {
     const google = (clinic && clinic.google) || null;
 
     if (!google || !google.googleSub) {
+      return res.status(401).json({ status: 'login_required', bookings: [] });
+    }
+
+    // GT-136 A2: the clinic ID alone is an identifier, not a credential.
+    // Patient rows are released only to the session that also proves the
+    // record's cf_key (the same write credential POST /api/clinic requires).
+    const meta = (clinic && clinic.meta) || null;
+    if (!meta || !meta.keyHash || !verifyClinicKeyHash(getClinicKeyFromRequest(req), meta.keyHash)) {
       return res.status(401).json({ status: 'login_required', bookings: [] });
     }
 

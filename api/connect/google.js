@@ -31,6 +31,22 @@ module.exports = async (req, res) => {
   }
 
   const session = await ensureClinicSession(req, res, store, clinicStore);
+
+  // GT-136 A1: a pre-existing clinic record is only reachable with proof of
+  // its cf_key. An id-only cookie (or a wrong key) gets a 403, so a leaked
+  // clinic ID can no longer start a connect flow for someone else's clinic.
+  // Brand-new sessions and records with no key yet (genuine first bind,
+  // completed inside the OAuth callback) proceed.
+  if (session.recordHasKeyHash && !session.hasValidKey) {
+    return res.status(403).json({
+      status: 'forbidden',
+      code: 'INVALID_SESSION',
+      provider: 'google',
+      message:
+        'Your clinic session could not be verified. Please reload the page with cookies enabled and try again.',
+    });
+  }
+
   const origin = getOAuthBaseUrl(req);
   const redirectUri = `${origin}/api/callback/google`;
 

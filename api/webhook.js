@@ -10,7 +10,7 @@
 //     TELEGRAM_WEBHOOK_SECRET and handles /start linking codes.
 const crypto = require('crypto');
 const store = require('./_store');
-const { logServerError } = require('./_session');
+const { logServerError, timingSafeStringEqual } = require('./_session');
 const { processMessengerEvent, handleTelegramUpdate } = require('./_pipeline');
 
 async function readRawBodyBuffer(req) {
@@ -79,7 +79,7 @@ const handler = async (req, res) => {
     const token = req.query && req.query['hub.verify_token'];
     const challenge = req.query && req.query['hub.challenge'];
 
-    if (mode === 'subscribe' && token === verifyToken) {
+    if (mode === 'subscribe' && timingSafeStringEqual(String(token || ''), verifyToken)) {
       return res.status(200).send(String(challenge));
     }
     return res.status(403).send('Invalid verify token');
@@ -115,7 +115,7 @@ const handler = async (req, res) => {
     } else if (tgSecretHeader || (jsonValid && isTelegramUpdatePayload(body))) {
       // Telegram webhook updates do not include Meta's X-Hub-Signature-256 header.
       const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-      if (secret && tgSecretHeader !== secret) {
+      if (secret && !timingSafeStringEqual(String(tgSecretHeader || ''), secret)) {
         return res.status(403).json({ ok: false, error: 'Invalid Telegram secret token' });
       }
       if (!jsonValid || !isTelegramUpdatePayload(body)) {

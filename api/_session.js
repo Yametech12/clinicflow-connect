@@ -157,34 +157,25 @@ async function ensureClinicSession(req, res, store, clinicStore) {
 
   if (existingId) {
     let hasValidKey = false;
-    let effectiveKey = existingKey;
+    let recordHasKeyHash = false;
     if (store && store.isConfigured() && clinicStore) {
       const meta = await clinicStore.getClinicSection(store, existingId, 'meta');
       if (meta && meta.keyHash) {
+        recordHasKeyHash = true;
         hasValidKey = verifyClinicKeyHash(existingKey, meta.keyHash);
-      } else {
-        // No key hash stored yet (legacy v1 record, or meta not yet written):
-        // bind the presented cf_key, or issue a fresh one, so this session can
-        // save. The cf_clinic cookie itself was the v1 session credential, so
-        // binding on first touch is the migration path for pre-cf_key clinics.
-        if (!effectiveKey) {
-          effectiveKey = createClinicKey();
-          setClinicKeyCookie(req, res, effectiveKey);
-        }
-        const nowIso = new Date().toISOString();
-        await clinicStore.saveClinicSection(store, existingId, 'meta', {
-          clinicId: existingId,
-          keyHash: hashClinicKey(effectiveKey),
-          createdAt: (meta && meta.createdAt) || nowIso,
-          updatedAt: nowIso,
-        });
-        hasValidKey = true;
       }
+      // No key hash stored yet (legacy v1 record): GT-136 A3 removed the
+      // first-touch bind that used to upgrade any holder of the clinic ID on
+      // a plain read. Keys are now bound only inside OAuth callbacks
+      // (ensureMetaRecordOnCallback / adoption), so a legacy clinic recovers
+      // full access by logging in with Google. Reads serve the redacted
+      // summary until then.
     }
     return {
       clinicId: existingId,
-      clinicKey: effectiveKey,
+      clinicKey: existingKey,
       hasValidKey,
+      recordHasKeyHash,
       sessionIssued: false,
     };
   }
@@ -208,8 +199,20 @@ async function ensureClinicSession(req, res, store, clinicStore) {
     clinicId: createdId,
     clinicKey: createdKey,
     hasValidKey: true,
+    recordHasKeyHash: true,
     sessionIssued: true,
   };
+}
+
+// Length-guarded constant-time string comparison for shared secrets
+// (webhook verify tokens, Telegram webhook secret, admin probe).
+function timingSafeStringEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || !a || !b) {
+    return false;
+  }
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  return bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
 }
 
 function signState(clinicId, provider, secret) {
@@ -462,6 +465,7 @@ module.exports = {
   createClinicKey,
   hashClinicKey,
   verifyClinicKeyHash,
+  timingSafeStringEqual,
   getClinicIdFromRequest,
   getClinicKeyFromRequest,
   setClinicCookie,

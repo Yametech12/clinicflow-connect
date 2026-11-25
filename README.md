@@ -70,6 +70,46 @@ services (Upstash free tier) and zero npm dependencies (uses Node built-in
     (10-min TTL, written only after Calendar/Sheet success), `hist:<pageId>:<senderId>`
     (30-min TTL, max 6 messages), and `dead:<pageId>:<mid>` (24-hr dead-letter record).
 
+## Security model (GT-136)
+
+The `cf_clinic` cookie is only an identifier; the `cf_key` cookie is the
+write credential, and its SHA256 hash (`keyHash` on the `:meta` section) is
+the server-side proof. Since GT-136:
+
+- **Keys bind only inside OAuth callbacks** (`ensureMetaRecordOnCallback`).
+  Read paths (`GET /api/clinic`, session ensure) never issue a key, so a
+  legacy keyless record can no longer be claimed by whoever presents its id.
+- **Connect endpoints require key proof**: when a record has a `keyHash`,
+  `GET /api/connect/{google,facebook,telegram}` returns 403
+  `INVALID_SESSION` unless the request presents a matching `cf_key`. The
+  same proof is required by `GET /api/bookings` on top of the Google-bound
+  check.
+- **OAuth callbacks verify ownership before storing tokens**: the Google
+  callback binds only on a genuine first bind, a record already bound to
+  the signing-in account, or a request presenting the record's key
+  (adoption through the `clinicByGoogleSub` index is exempt, because that
+  binding could only have been created through this same gate). The
+  Facebook callback applies the same check, and multi-Page selection
+  completes by POST only, bound to the initiating session through the
+  `keyHash` stored in the `fb_pending` record.
+- **Adoption never moves the Facebook section** (a Page connection stays
+  with the record that made it, and the `fb_page` index is never repointed
+  by adoption); profile and Telegram carry over only when the source
+  clinic is not itself bound to a different Google account.
+- **Logout rotates the key server-side** (`POST` or `GET /api/logout`), so
+  a captured cookie pair dies with the session, not just the browser copy.
+- **Google account switches are clean**: the stored Sheet pointer is
+  cleared and re-provisioned under the new account, a userinfo failure
+  surfaces an error page instead of a silent success, and the
+  `clinicByGoogleSub` index is verified against the record on every read
+  (self-healing on disagreement).
+- **Response headers** (`vercel.json`): a CSP tuned to zero external
+  origins plus `nosniff`, `X-Frame-Options: DENY`, referrer and
+  permissions policies on all routes; `/api/*` responses are
+  `Cache-Control: private, no-store` with `X-Robots-Tag: noindex`, and the
+  dashboard carries a `noindex` robots meta plus header. Webhook verify
+  tokens and the Telegram webhook secret are compared in constant time.
+
 ## Files
 
 - `index.html`: public landing page. Hero, live front-end sample price demo,
@@ -77,10 +117,13 @@ services (Upstash free tier) and zero npm dependencies (uses Node built-in
   buttons that start the Google sign in flow. No clinic data lives here;
   arriving with `?login=1` shows the login prompt banner.
 - `dashboard.html`: the client area at `/dashboard` (served via `cleanUrls`).
-  The page stays hidden until `GET /api/clinic` reports `logged_in: true`
-  (a clinic session bound to a Google account); otherwise it redirects to
-  `/?login=1`. Contains the sticky 4-step progress bar, signed-in email and
-  Log out, clinic profile form, the three connect cards with safety lines
+  A loading shell (brand, skeleton, pulsing pill) shows from first paint;
+  the client area stays hidden until `GET /api/clinic` reports
+  `logged_in: true` (a clinic session bound to a Google account), a failed
+  check offers an inline retry in the shell, and a not-logged-in check
+  redirects to `/?login=1`. Contains the sticky 4-step progress bar (its
+  segments are section anchors), signed-in email and Log out (POST),
+  clinic profile form, the three connect cards with safety lines
   and pills, return banners, pilot state line, connection status box, and
   the Recent bookings panel fed by `api/bookings.js`.
 - `api/_store.js`: swappable KV storage layer (`get`, `put`, `putIfAbsent`,
@@ -102,12 +145,14 @@ services (Upstash free tier) and zero npm dependencies (uses Node built-in
   POST without valid `cf_key` with 403). GET also reports `logged_in` (the
   clinic record is bound to a Google account) and `connections.google.bound`.
 - `api/bookings.js`: GET. Recent bookings for the dashboard: requires a
-  Google-bound clinic session (401 `login_required` otherwise), reads the
-  last 10 `Leads_Bookings` rows from the clinic's own Sheet with its stored
-  Google credentials (refreshing when needed), and reports honest `ok`,
+  Google-bound clinic session with `cf_key` proof (401 `login_required`
+  otherwise), reads the last 10 `Leads_Bookings` rows (read range bounded
+  at row 5001) from the clinic's own Sheet with its stored Google
+  credentials (refreshing when needed), and reports honest `ok`,
   `no_sheet`, or `google_unavailable` states. Read-only.
-- `api/logout.js`: GET. Expires the `cf_clinic` and `cf_key` cookies and
-  redirects to `/`.
+- `api/logout.js`: GET or POST. Rotates the record's `keyHash` server-side
+  (invalidating the presented key), expires the `cf_clinic` and `cf_key`
+  cookies, and redirects to `/`.
 - `api/connect/facebook.js`, `api/connect/google.js`, `api/connect/telegram.js`:
   connect starters returning signed OAuth URLs or deep links (`https://t.me/<bot>?start=<code>`).
   The Google starter requests `openid` plus `userinfo.email`/`userinfo.profile`
@@ -122,7 +167,14 @@ services (Upstash free tier) and zero npm dependencies (uses Node built-in
   over raw bytes (403 fail-closed when `META_APP_SECRET` is set), handles Meta
   GET verification, processes Messenger events, and handles Telegram `/start`
   linking (enforcing `TELEGRAM_WEBHOOK_SECRET` when set).
-- `vercel.json`, `.env.example`, `TESTING.md`.
+- `robots.txt`, `sitemap.xml`: crawl control (dashboard and `/api/` are
+  disallowed; the sitemap lists only the landing).
+- `og-image.png` (1200x630 share card), `favicon.svg`, `favicon.ico`,
+  `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`,
+  `manifest.webmanifest` (installable dashboard, `start_url: /dashboard`):
+  brand assets generated from the teal chat-bubble mark.
+- `vercel.json` (cleanUrls plus the header sets described in the security
+  model), `.env.example`, `TESTING.md`.
 
 No external npm dependencies. Functions use only Node 18+ built-ins
 (`fetch`, `URLSearchParams`, `crypto`, `Intl.DateTimeFormat`).

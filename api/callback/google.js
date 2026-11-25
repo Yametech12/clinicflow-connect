@@ -6,6 +6,8 @@ const clinicStore = require('../_clinic');
 const {
   getOAuthBaseUrl,
   getClinicIdFromRequest,
+  getClinicKeyFromRequest,
+  verifyClinicKeyHash,
   createClinicKey,
   hashClinicKey,
   setClinicCookie,
@@ -167,34 +169,105 @@ module.exports = async (req, res) => {
       email = info.email;
       googleSub = info.sub;
     } catch (infoErr) {
-      logServerError('google_userinfo', infoErr);
+      // GT-136 A8: without the account identity there is nothing safe to
+      // store or bind. Surface an honest error page instead of the old
+      // silent success redirect that left the clinic unbound and looping.
+      const ref = logServerError('google_userinfo', infoErr);
+      return sendError(
+        req,
+        res,
+        500,
+        'Google connection failed',
+        'Something went wrong on our side while connecting. Please try again in a few minutes. Your accounts are unchanged and safe.',
+        ref
+      );
+    }
+    if (!googleSub) {
+      const ref = logServerError(
+        'google_userinfo',
+        new Error('Google userinfo returned no account id (sub).')
+      );
+      return sendError(
+        req,
+        res,
+        500,
+        'Google connection failed',
+        'Something went wrong on our side while connecting. Please try again in a few minutes. Your accounts are unchanged and safe.',
+        ref
+      );
     }
 
     // Login identity: a Google account owns exactly one clinic record. If
     // this account was bound before, adopt that record; otherwise bind the
     // account to the clinic carried by the OAuth state.
     const stateClinicId = clinicId;
+    const indexedClinicId = await clinicStore.getClinicIdByGoogleSub(store, googleSub);
     let effectiveClinicId = stateClinicId;
-    if (googleSub) {
-      const indexedClinicId = await clinicStore.getClinicIdByGoogleSub(store, googleSub);
-      if (indexedClinicId) {
-        effectiveClinicId = indexedClinicId;
-      }
+    if (indexedClinicId) {
+      effectiveClinicId = indexedClinicId;
     }
     const adopted = effectiveClinicId !== stateClinicId;
 
+    if (!adopted) {
+      // GT-136 A1: before tokens are stored or identity is bound on the
+      // state clinic, the caller must own that clinic: a cf_key matching
+      // its keyHash, a record already bound to this same Google account,
+      // or a genuine first bind (no keyHash and no googleSub yet). Adoption
+      // above is exempt because the binding it relies on could only have
+      // been created through this same gate. Anything else stores nothing.
+      const [stateMeta, stateGoogle] = await Promise.all([
+        clinicStore.getClinicSection(store, stateClinicId, 'meta'),
+        clinicStore.getClinicSection(store, stateClinicId, 'google'),
+      ]);
+      const alreadyBoundHere = Boolean(stateGoogle && stateGoogle.googleSub === googleSub);
+      const isFirstBind =
+        !(stateMeta && stateMeta.keyHash) && !(stateGoogle && stateGoogle.googleSub);
+      const ownsKey = Boolean(
+        stateMeta &&
+          stateMeta.keyHash &&
+          getClinicIdFromRequest(req) === stateClinicId &&
+          verifyClinicKeyHash(getClinicKeyFromRequest(req), stateMeta.keyHash)
+      );
+      if (!alreadyBoundHere && !isFirstBind && !ownsKey) {
+        return sendError(
+          req,
+          res,
+          400,
+          'That sign-in link expired',
+          'For your safety, each sign-in link works only once and only for a short time. Please return to the ClinicFlow page and tap the connect button again.'
+        );
+      }
+    }
+
     if (adopted) {
-      // Carry over connections the browser-side clinic already made (profile,
-      // Facebook Page, Telegram) when the adopted record does not have them
-      // yet, so adopting never silently drops a working connection.
-      for (const section of ['profile', 'facebook', 'telegram']) {
-        const targetSection = await clinicStore.getClinicSection(store, effectiveClinicId, section);
-        if (targetSection) continue;
-        const sourceSection = await clinicStore.getClinicSection(store, stateClinicId, section);
-        if (!sourceSection) continue;
-        await clinicStore.saveClinicSection(store, effectiveClinicId, section, sourceSection);
-        if (section === 'facebook' && sourceSection.pageId) {
-          await store.put(`fb_page:${sourceSection.pageId}`, { clinicId: effectiveClinicId });
+      // GT-136 A5: carry over only profile and telegram, and only when the
+      // browser-side clinic is not itself bound to a different Google
+      // account. The facebook section is never carried over: a Page
+      // connection is the highest-value asset on a record, it is one click
+      // to redo, and moving it would silently stop the source clinic's bot
+      // (its fb_page index entry would point away).
+      const sourceGoogle = await clinicStore.getClinicSection(store, stateClinicId, 'google');
+      const sourceBoundElsewhere = Boolean(
+        sourceGoogle && sourceGoogle.googleSub && sourceGoogle.googleSub !== googleSub
+      );
+      if (sourceBoundElsewhere) {
+        console.log(
+          `[clinicflow] adoption carry-over skipped: source ${stateClinicId} is bound to a different Google account`
+        );
+      } else {
+        const carried = [];
+        for (const section of ['profile', 'telegram']) {
+          const targetSection = await clinicStore.getClinicSection(store, effectiveClinicId, section);
+          if (targetSection) continue;
+          const sourceSection = await clinicStore.getClinicSection(store, stateClinicId, section);
+          if (!sourceSection) continue;
+          await clinicStore.saveClinicSection(store, effectiveClinicId, section, sourceSection);
+          carried.push(section);
+        }
+        if (carried.length) {
+          console.log(
+            `[clinicflow] adoption carry-over from ${stateClinicId} to ${effectiveClinicId}: ${carried.join(', ')}`
+          );
         }
       }
     }
@@ -205,8 +278,16 @@ module.exports = async (req, res) => {
     ]);
     const baseGoogle = prevGoogle || {};
 
-    let spreadsheetId = baseGoogle.spreadsheetId || null;
-    let spreadsheetUrl = baseGoogle.spreadsheetUrl || null;
+    // GT-136 A8: switching the clinic to a different Google account must
+    // not keep the previous account's Sheet pointer (the new account
+    // usually cannot read that Sheet, and the failure used to be silent).
+    // Clearing it lets provisioning create a fresh Sheet under the new
+    // account below.
+    const accountSwitched = Boolean(
+      baseGoogle.googleSub && googleSub && baseGoogle.googleSub !== googleSub
+    );
+    let spreadsheetId = accountSwitched ? null : baseGoogle.spreadsheetId || null;
+    let spreadsheetUrl = accountSwitched ? null : baseGoogle.spreadsheetUrl || null;
     let sheetWarning = false;
 
     if (!spreadsheetId) {

@@ -3,14 +3,47 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ClinicFlow PH: Connect your clinic</title>
-<meta name="description" content="ClinicFlow PH answers your clinic Messenger page, quotes your real prices, and books appointments into your own sheet and calendar. Connect your own accounts in three steps.">
+<title>ClinicFlow PH: Reply to every patient in seconds</title>
+<meta name="description" content="ClinicFlow answers your clinic's Messenger for you: your real prices, bookings written into your own Google Sheet and Calendar, and an alert on your phone for every booking. Pilot setup ₱5,500.">
 <meta name="theme-color" content="#faf8f3">
 <meta name="theme-color" content="#141a17" media="(prefers-color-scheme: dark)">
-<meta property="og:title" content="ClinicFlow PH: Connect your clinic">
-<meta property="og:description" content="ClinicFlow PH answers your clinic Messenger page, quotes your real prices, and books appointments into your own sheet and calendar. Connect your own accounts in three steps.">
+<link rel="canonical" href="https://clinicflow-connect-two.vercel.app/">
+<meta property="og:title" content="ClinicFlow PH: Reply to every patient in seconds">
+<meta property="og:description" content="ClinicFlow answers your clinic's Messenger for you: your real prices, bookings written into your own Google Sheet and Calendar, and an alert on your phone for every booking. Pilot setup ₱5,500.">
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://clinicflow-connect-two.vercel.app/">
+<meta property="og:site_name" content="ClinicFlow PH">
+<meta property="og:locale" content="en_PH">
+<meta property="og:image" content="https://clinicflow-connect-two.vercel.app/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="ClinicFlow PH: a Messenger front desk for Philippine dental clinics">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ClinicFlow PH: Reply to every patient in seconds">
+<meta name="twitter:description" content="ClinicFlow answers your clinic's Messenger for you: your real prices, bookings written into your own Google Sheet and Calendar, and an alert on your phone for every booking. Pilot setup ₱5,500.">
+<meta name="twitter:image" content="https://clinicflow-connect-two.vercel.app/og-image.png">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Cpath d='M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z' fill='%23ffffff'/%3E%3C/svg%3E">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "ClinicFlow PH",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Web",
+  "description": "ClinicFlow PH answers your clinic Messenger page, quotes your real prices, and books appointments into your own sheet and calendar.",
+  "offers": {
+    "@type": "Offer",
+    "name": "Pilot setup",
+    "price": "5500",
+    "priceCurrency": "PHP"
+  },
+  "provider": { "@type": "Organization", "name": "ClinicFlow PH" }
+}
+</script>
 <style>
   :root{
     --paper:#faf8f3;
@@ -23,12 +56,16 @@
     --save-bg:#1c2420;
     --save-text:#ffffff;
     --save-hover:#2d3832;
-    --amber:#b45309;
+    --amber:#9a4307;
     --amber-bg:#fdf3e3;
     --card:#ffffff;
     --chat-bg:#f4f2ec;
     --chat-user-bg:#0f766e;
     --chat-user-ink:#ffffff;
+    --rule:#1c2420;
+    --green:#15803d;
+    --green-bg:#e9f6ec;
+    --tg-bg:#f2faf8;
   }
   @media (prefers-color-scheme: dark){
     :root{
@@ -48,6 +85,10 @@
       --chat-bg:#141a17;
       --chat-user-bg:#2dd4bf;
       --chat-user-ink:#0e1714;
+      --rule:#46524b;
+      --green:#4ade80;
+      --green-bg:#132d1c;
+      --tg-bg:#162823;
     }
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -60,28 +101,30 @@
   }
   .wrap{max-width:960px;margin:0 auto;padding:0 20px}
   header.top{
-    border-bottom:2px solid var(--ink);
+    border-bottom:2px solid var(--rule);
     padding:18px 0 14px;
     display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
   }
   .brand{font-family:Georgia,"Times New Roman",serif;font-size:26px;font-weight:700;letter-spacing:.2px}
   .brand span{color:var(--teal)}
+  .brand svg{vertical-align:-5px;margin-right:8px}
   .head-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   .topnote{font-size:13px;color:var(--muted)}
   button.loginbtn{
     background:var(--teal);color:var(--btn-text);border:none;border-radius:4px;
     padding:10px 18px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;
-    font-size:14.5px;font-weight:600;cursor:pointer;
+    font-size:14.5px;font-weight:600;cursor:pointer;transition:background-color .15s ease;
   }
   button.loginbtn:hover{background:var(--teal-dark)}
+  button.loginbtn:active{background:var(--teal-dark)}
   button.loginbtn:disabled{opacity:.65;cursor:wait}
   button.loginbtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .login-banner{
-    display:none;margin:18px 0 0;padding:12px 14px;border-radius:4px;
+    display:flex;visibility:hidden;min-height:48px;margin:18px 0 0;padding:12px 14px;border-radius:4px;
     background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber);
     font-size:14px;font-weight:600;align-items:center;gap:12px;flex-wrap:wrap;
   }
-  .login-banner.show{display:flex}
+  .login-banner.show{visibility:visible}
   .hero{padding:40px 0 8px}
   .kicker{font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px}
   h1{font-family:Georgia,"Times New Roman",serif;font-size:40px;line-height:1.15;font-weight:700;max-width:680px}
@@ -94,10 +137,19 @@
     font-size:15px;font-weight:600;font-family:inherit;
   }
   .herobtn:hover{background:var(--teal-dark)}
+  .herobtn:active{background:var(--teal-dark)}
   .herobtn:disabled{opacity:.65;cursor:wait}
   .herobtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .herobtn{transition:background-color .15s ease}
+  .cta-note{margin-top:10px;font-size:13.5px;color:var(--muted);max-width:640px}
+  .trustrow{
+    display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;align-items:center;
+    font-size:13px;color:var(--muted);
+  }
+  .trustrow .titem{display:inline-flex;align-items:center;gap:6px}
+  .trustrow svg{color:var(--teal);flex-shrink:0}
   .howseq{
-    margin:28px 0 6px;border:1px solid var(--line);background:var(--card);
+    margin:16px 0 0;border:1px solid var(--line);background:var(--card);
     display:grid;grid-template-columns:repeat(3,1fr);
   }
   .howstep{padding:18px 20px;display:flex;gap:12px;align-items:flex-start}
@@ -106,9 +158,9 @@
     font-family:Georgia,"Times New Roman",serif;font-size:28px;line-height:1;
     font-weight:700;color:var(--teal);flex-shrink:0;margin-top:2px;
   }
-  .howstep b{display:block;font-size:14px;margin-bottom:4px}
+  .howstep h3{display:block;font-size:14px;margin-bottom:4px}
   .howstep p{font-size:13.5px;color:var(--muted)}
-  section{padding:30px 0 6px}
+  section{padding:36px 0 0}
   h2{font-family:Georgia,"Times New Roman",serif;font-size:24px;margin-bottom:6px}
   .sub{color:var(--muted);font-size:14.5px;max-width:640px}
   .demo-panel{
@@ -144,9 +196,11 @@
     font-size:14px;font-weight:600;cursor:pointer;
   }
   button.savebtn:hover{background:var(--save-hover)}
+  button.savebtn:active{background:var(--save-hover)}
+  button.savebtn{transition:background-color .15s ease}
   button.savebtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .phone-mock{
-    border:2px solid var(--ink);border-radius:14px;background:var(--chat-bg);overflow:hidden;
+    border:2px solid var(--rule);border-radius:14px;background:var(--chat-bg);overflow:hidden;
   }
   .phone-head{
     background:var(--card);border-bottom:1px solid var(--line);padding:10px 14px;
@@ -163,15 +217,40 @@
   .bubble.bot{
     align-self:flex-start;background:var(--card);border:1px solid var(--line);color:var(--ink);
   }
+  .bubble.demo-beat{display:none}
+  .bubble.demo-beat.show{display:block}
+  @keyframes priceFlash{from{background-color:var(--green-bg)}to{background-color:transparent}}
+  .flash{animation:priceFlash .9s ease}
+  @media (prefers-reduced-motion: reduce){
+    .flash{animation:none}
+  }
+  .demo-bookbtn{margin-top:12px}
+  .demo-alert{
+    margin-top:12px;border:1px dashed var(--teal);background:var(--tg-bg);
+    padding:12px 14px;font-size:13.5px;color:var(--ink);
+  }
+  .demo-alert strong{color:var(--teal)}
+  .demo-list-title{
+    margin-top:14px;font-size:12.5px;font-weight:600;letter-spacing:.4px;
+    text-transform:uppercase;color:var(--muted);
+  }
+  .demo-note{margin-top:12px}
   .pilotbox{
     margin-top:16px;background:var(--card);border:1px solid var(--line);
     border-left:4px solid var(--teal);padding:20px 22px;display:flex;flex-direction:column;gap:8px;
   }
+  .pilot-grid{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:center}
+  .pilot-text{display:flex;flex-direction:column;gap:8px}
+  .pilot-price{font-family:Georgia,"Times New Roman",serif;font-size:34px;font-weight:700;line-height:1.1}
+  .pilot-price-cap{font-size:12.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-top:2px}
+  .pilot-regular{font-size:13.5px;color:var(--muted);margin-top:6px}
   .pilotbox p{font-size:14.5px;color:var(--ink)}
   .pilotbox p.pilotnext{font-size:14px;color:var(--muted)}
   .pilotbox .herobtn{align-self:flex-start;margin-top:6px}
+  .pilotbox .trustrow{margin-top:6px}
+  .contact-line{font-size:14px;color:var(--muted)}
   footer{
-    margin-top:44px;border-top:2px solid var(--ink);padding:16px 0 30px;
+    margin-top:44px;border-top:2px solid var(--rule);padding:16px 0 30px;
     font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:8px;
   }
   .footer-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -181,6 +260,14 @@
     .howstep + .howstep{border-left:none;border-top:1px solid var(--line)}
     .demo-panel{grid-template-columns:1fr}
     .demo-controls{flex-direction:column;align-items:stretch;gap:10px}
+    .pilot-grid{grid-template-columns:1fr}
+  }
+  @media (max-width:560px){
+    .brand{font-size:22px}
+    header.top{padding:14px 0 10px}
+    .head-actions{flex:1;justify-content:flex-end}
+    .head-actions .loginbtn{order:2}
+    .topnote{font-size:12px;order:3;flex-basis:100%}
   }
 </style>
 </head>
@@ -188,13 +275,14 @@
 <div class="wrap">
 
   <header class="top">
-    <div class="brand">ClinicFlow <span>PH</span></div>
+    <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0f766e"/><path d="M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="#ffffff"/></svg>ClinicFlow <span>PH</span></div>
     <div class="head-actions">
       <div class="topnote">Messenger front desk for Philippine dental clinics</div>
-      <button class="loginbtn" type="button" data-login>Log in</button>
+      <button class="loginbtn" type="button" data-login>Log in with Google</button>
     </div>
   </header>
 
+  <main>
   <div class="login-banner" id="loginBanner" role="status">
     <span id="loginBannerText">Log in with Google to open your dashboard.</span>
     <button class="loginbtn" type="button" data-login>Log in with Google</button>
@@ -207,32 +295,17 @@
       ClinicFlow answers your clinic's Messenger for you. It quotes the prices from your own price sheet, asks for the patient's name, mobile number, and preferred schedule, then writes the booking into your own Google Sheet and Calendar.
     </p>
     <p class="lede lede2">
-      Every confirmed booking also reaches your phone by Telegram. Kahit sarado na ang clinic, may sumasagot sa pasyente.
+      Every confirmed booking also reaches your phone by Telegram. <span lang="tl">Kahit sarado na ang clinic, may sumasagot sa pasyente.</span>
+    </p>
+    <p class="lede lede2">
+      Built for independent dental clinics, from solo practice to a few branches. It runs on the Facebook Page, Google account, and phone you already have. No new equipment, no software to install.
     </p>
     <button class="herobtn" type="button" data-login>Start a pilot</button>
-
-    <div class="howseq">
-      <div class="howstep">
-        <div class="hownum" aria-hidden="true">1</div>
-        <div>
-          <b>Patients ask on Messenger</b>
-          <p>Prices, hours, services. The bot only quotes what is written in your price sheet. Change a price in the sheet and the next answer uses it.</p>
-        </div>
-      </div>
-      <div class="howstep">
-        <div class="hownum" aria-hidden="true">2</div>
-        <div>
-          <b>The bot collects the booking</b>
-          <p>Name, mobile number, preferred date and time. Nothing is booked until all three are given.</p>
-        </div>
-      </div>
-      <div class="howstep">
-        <div class="hownum" aria-hidden="true">3</div>
-        <div>
-          <b>You see it instantly</b>
-          <p>A row in your booking sheet, an event on your calendar, and a Telegram alert on your phone.</p>
-        </div>
-      </div>
+    <p class="cta-note">Pilot setup is ₱5,500 one time. Logging in is free, and you pay only when you confirm your pilot.</p>
+    <div class="trustrow">
+      <span class="titem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Your accounts stay under your name</span>
+      <span class="titem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>We never see your passwords</span>
+      <span class="titem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Disconnect anytime</span>
     </div>
   </div>
 
@@ -254,25 +327,88 @@
           </div>
           <button class="savebtn" type="button" id="demoAskBtn">Ask again</button>
         </div>
+        <button class="savebtn demo-bookbtn" type="button" id="demoBookBtn">See a booking happen</button>
       </div>
-      <div class="phone-mock" aria-label="Sample Messenger preview">
-        <div class="phone-head">BrightSmile Dental Clinic <span>Sample Messenger</span></div>
-        <div class="chat-body">
-          <div class="bubble patient">Pila ang cleaning?</div>
-          <div class="bubble bot" id="demoBotReply"></div>
+      <div>
+        <div class="phone-mock" aria-label="Sample Messenger preview">
+          <div class="phone-head">BrightSmile Dental Clinic <span>Sample Messenger</span></div>
+          <div class="chat-body">
+            <div class="bubble patient">Pila ang cleaning?</div>
+            <div class="bubble bot" id="demoBotReply">Hi po! Ang dental cleaning namin ay ₱1,500 po. Kung gusto ninyo mag-book, paki-send lang ng full name, mobile number, at preferred schedule.</div>
+            <div class="bubble patient demo-beat" id="demoBeatPatient">Mag-book ko ugma, 10 AM. Maria Clara, 0917 123 4567.</div>
+            <div class="bubble bot demo-beat" id="demoBeatBot">Salamat po, Maria. Na-book na po kayo bukas, 10:00 AM, para sa dental cleaning. Na-save na ito sa booking sheet ng clinic.</div>
+          </div>
+        </div>
+        <div id="demoPayoff" hidden>
+          <div class="demo-alert"><strong>Telegram alert:</strong> New booking: Maria Clara, Dental Cleaning, tomorrow 10:00 AM.</div>
+          <div class="demo-list-title">Bookings</div>
+          <div class="demo-sheet-list" aria-label="Sample bookings list">
+            <div class="demo-sheet-row"><span>Maria Clara · Dental Cleaning</span><strong>Tomorrow, 10:00 AM</strong></div>
+          </div>
         </div>
       </div>
     </div>
+    <p class="sub demo-note">This sample shows three services. Your real price sheet holds your full list, and the bot quotes only what is written there.</p>
   </section>
+
+  <div class="howseq">
+    <div class="howstep">
+      <div class="hownum" aria-hidden="true">1</div>
+      <div>
+        <h3>Patients ask on Messenger</h3>
+        <p>Prices, hours, services. The bot only quotes what is written in your price sheet. Change a price in the sheet and the next answer uses it.</p>
+      </div>
+    </div>
+    <div class="howstep">
+      <div class="hownum" aria-hidden="true">2</div>
+      <div>
+        <h3>The bot collects the booking</h3>
+        <p>Name, mobile number, preferred date and time. Nothing is booked until all three are given.</p>
+      </div>
+    </div>
+    <div class="howstep">
+      <div class="hownum" aria-hidden="true">3</div>
+      <div>
+        <h3>You see it instantly</h3>
+        <p>A row in your booking sheet, an event on your calendar, and a Telegram alert on your phone.</p>
+      </div>
+    </div>
+  </div>
 
   <section id="pilot">
     <h2>Start with a pilot setup</h2>
     <div class="pilotbox">
-      <p>We set up Sprint 1 for your clinic: the Messenger bot that answers prices and books appointments, connected to your own accounts above. Pilot price: ₱5,500 one time (regular setup ₱12,000). You own every account and file; we only install and configure.</p>
-      <p class="pilotnext">To get started, log in with Google, then finish the three connections in your dashboard. Your pilot begins once your Page, Google, and Telegram are all connected.</p>
+      <div class="pilot-grid">
+        <div class="pilot-text">
+          <p>We set up the pilot for your clinic: a Messenger bot on your own Page that answers price and service questions from your price sheet, collects the patient's name, mobile number, and preferred schedule, writes each booking into your own Google Sheet and Calendar, and sends you a Telegram alert for every confirmed booking. Setup takes 3 days, done by us on your own accounts.</p>
+          <p>You own every account and file; we only install and configure.</p>
+          <p>What we need from you: your price list, your clinic hours, and about 15 minutes to sign in to your own Facebook, Google, and Telegram using the steps in your dashboard.</p>
+          <p>Connecting your accounts is free and does not start any payment. When you are ready to begin the pilot, we confirm it with you first. Pilot terms: 50 percent deposit by GCash, Maya, or InstaPay to start, and the balance only at the live walkthrough, when you see the bot answering on your own Page.</p>
+        </div>
+        <div class="pilot-priceblock">
+          <div class="pilot-price">₱5,500</div>
+          <div class="pilot-price-cap">One-time pilot</div>
+          <div class="pilot-regular">Regular setup ₱12,000</div>
+        </div>
+      </div>
+      <p class="pilotnext">To get started, log in with Google, then finish the three connections in your dashboard.</p>
+      <div class="trustrow">
+        <span class="titem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Your accounts stay under your name</span>
+        <span class="titem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>We never see your passwords</span>
+        <span class="titem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Disconnect anytime</span>
+      </div>
       <button class="herobtn" type="button" data-login>Start a pilot</button>
+      <p class="cta-note">Free to log in and connect. You pay only when you confirm your pilot.</p>
+      <p class="contact-line">Questions first? Reply to the message that sent you this link, and we will answer before you connect anything.</p>
     </div>
   </section>
+
+  <section id="closing">
+    <p class="sub">Ready when you are: log in, connect your three accounts, and your patients get an answer in seconds, day or night.</p>
+    <button class="herobtn" type="button" data-login>Start a pilot</button>
+  </section>
+
+  </main>
 
   <footer>
     <div class="footer-top">
@@ -288,6 +424,17 @@
 (function () {
   // Sample demo engine (front-end only, zero backend calls)
   var samplePrices = { cleaning: '₱1,500', extraction: '₱1,800', filling: '₱1,400' };
+  var lastRenderedPrice = null;
+  function flashEl(el) {
+    if (!el) return;
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+    el.addEventListener('animationend', function handler() {
+      el.classList.remove('flash');
+      el.removeEventListener('animationend', handler);
+    });
+  }
   function renderDemoReply() {
     var input = document.getElementById('demoCleaningPrice');
     var cell = document.getElementById('demoCleaningCell');
@@ -295,16 +442,52 @@
     if (!input || !cell || !bubble) return;
     var val = String(input.value || '').trim() || samplePrices.cleaning;
     samplePrices.cleaning = val;
+    var changed = lastRenderedPrice !== null && lastRenderedPrice !== val;
     cell.textContent = val;
     bubble.textContent =
       'Hi po! Ang dental cleaning namin ay ' + val +
       ' po. Kung gusto ninyo mag-book, paki-send lang ng full name, mobile number, at preferred schedule.';
+    if (changed) {
+      flashEl(cell);
+      flashEl(bubble);
+    }
+    lastRenderedPrice = val;
   }
   var demoBtn = document.getElementById('demoAskBtn');
   if (demoBtn) {
     demoBtn.addEventListener('click', renderDemoReply);
   }
+  var demoInput = document.getElementById('demoCleaningPrice');
+  if (demoInput) {
+    var demoDebounce = null;
+    demoInput.addEventListener('input', function () {
+      if (demoDebounce) clearTimeout(demoDebounce);
+      demoDebounce = setTimeout(renderDemoReply, 150);
+    });
+    demoInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        renderDemoReply();
+      }
+    });
+  }
   renderDemoReply();
+
+  // Beats 2 and 3: the sample booking happens, the sheet row and the
+  // Telegram alert appear. Front-end only, sample data throughout.
+  var demoBookBtn = document.getElementById('demoBookBtn');
+  if (demoBookBtn) {
+    demoBookBtn.addEventListener('click', function () {
+      ['demoBeatPatient', 'demoBeatBot'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.classList.add('show');
+      });
+      var payoff = document.getElementById('demoPayoff');
+      if (payoff) payoff.hidden = false;
+      demoBookBtn.disabled = true;
+      demoBookBtn.textContent = 'Booking saved in the sample sheet';
+    });
+  }
 
   function fetchWithTimeout(url, options, timeoutMs) {
     var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -339,11 +522,23 @@
   // Log in and pilot CTAs both start the Google sign in flow. The connect
   // endpoint returns the OAuth URL as JSON, so fetch it and then navigate.
   var loginBusy = false;
-  function startLogin() {
+  function startLogin(e) {
     if (loginBusy) return;
     loginBusy = true;
+    var clicked = e && e.currentTarget ? e.currentTarget : null;
     var buttons = document.querySelectorAll('[data-login]');
-    buttons.forEach(function (b) { b.disabled = true; });
+    buttons.forEach(function (b) {
+      b.disabled = true;
+      if (!b.dataset.label) b.dataset.label = b.textContent;
+    });
+    if (clicked) clicked.textContent = 'Opening Google.';
+    function restoreButtons() {
+      loginBusy = false;
+      buttons.forEach(function (b) {
+        b.disabled = false;
+        if (b.dataset.label) b.textContent = b.dataset.label;
+      });
+    }
     fetchWithTimeout('/api/connect/google', {}, 8000)
       .then(function (r) { return r.json(); })
       .then(function (data) {
@@ -351,16 +546,14 @@
           window.location.href = data.oauth_url;
           return;
         }
-        loginBusy = false;
-        buttons.forEach(function (b) { b.disabled = false; });
+        restoreButtons();
         showLoginBanner(
           data.message ||
             'This step is not switched on yet on our side. Your account is safe and there is nothing for you to fix. Please check back shortly.'
         );
       })
       .catch(function () {
-        loginBusy = false;
-        buttons.forEach(function (b) { b.disabled = false; });
+        restoreButtons();
         showLoginBanner('The server did not answer. Please try again in a moment.');
       });
   }

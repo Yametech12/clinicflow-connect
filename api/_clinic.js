@@ -107,13 +107,42 @@ function googleSubIndexKey(sub) {
 
 async function getClinicIdByGoogleSub(store, sub) {
   if (!store || !sub) return null;
-  const record = await store.get(googleSubIndexKey(String(sub)));
-  return record && record.clinicId ? record.clinicId : null;
+  const subStr = String(sub);
+  const indexKey = googleSubIndexKey(subStr);
+  const record = await store.get(indexKey);
+  if (!record || !record.clinicId) return null;
+
+  // GT-136 A10: the clinic record is the source of truth. Verify the record's
+  // stored googleSub matches this index entry; when they disagree, heal the
+  // index from the record (drop the stale entry, restore the record's own
+  // entry) and report no owner for this sub.
+  const google = await getClinicSection(store, record.clinicId, 'google');
+  if (google && google.googleSub) {
+    if (google.googleSub === subStr) {
+      return record.clinicId;
+    }
+    await store.del(indexKey);
+    const ownKey = googleSubIndexKey(google.googleSub);
+    const own = await store.get(ownKey);
+    if (!own || own.clinicId !== record.clinicId) {
+      await store.put(ownKey, { clinicId: record.clinicId });
+    }
+    return null;
+  }
+
+  return record.clinicId;
 }
 
 async function bindGoogleSub(store, sub, clinicId) {
   if (!store || !sub || !clinicId) return;
-  await store.put(googleSubIndexKey(String(sub)), { clinicId });
+  const subStr = String(sub);
+  // GT-136 A10: write the record first, then the index, so a lookup never
+  // sees an index entry the record does not back.
+  const google = await getClinicSection(store, clinicId, 'google');
+  if (google && google.googleSub !== subStr) {
+    await saveClinicSection(store, clinicId, 'google', { ...google, googleSub: subStr });
+  }
+  await store.put(googleSubIndexKey(subStr), { clinicId });
 }
 
 async function unbindGoogleSub(store, sub, clinicId) {

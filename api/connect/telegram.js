@@ -48,6 +48,20 @@ module.exports = async (req, res) => {
   }
 
   const session = await ensureClinicSession(req, res, store, clinicStore);
+
+  // GT-136 A1: same key-proof gate as the OAuth connect handlers. Without
+  // it, anyone holding a clinic ID could mint a linking code and divert
+  // that clinic's booking alerts to their own Telegram chat.
+  if (session.recordHasKeyHash && !session.hasValidKey) {
+    return res.status(403).json({
+      status: 'forbidden',
+      code: 'INVALID_SESSION',
+      provider: 'telegram',
+      message:
+        'Your clinic session could not be verified. Please reload the page with cookies enabled and try again.',
+    });
+  }
+
   const now = Date.now();
   const expiresAt = new Date(now + CODE_TTL_SECONDS * 1000);
 

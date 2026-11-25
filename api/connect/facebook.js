@@ -31,6 +31,19 @@ module.exports = async (req, res) => {
   }
 
   const session = await ensureClinicSession(req, res, store, clinicStore);
+
+  // GT-136 A1: same key-proof gate as the Google connect handler. An
+  // id-only cookie for a record that already has a key gets a 403.
+  if (session.recordHasKeyHash && !session.hasValidKey) {
+    return res.status(403).json({
+      status: 'forbidden',
+      code: 'INVALID_SESSION',
+      provider: 'facebook',
+      message:
+        'Your clinic session could not be verified. Please reload the page with cookies enabled and try again.',
+    });
+  }
+
   const origin = getOAuthBaseUrl(req);
   const redirectUri = `${origin}/api/callback/facebook`;
   const scopes = ['pages_show_list', 'pages_messaging', 'pages_manage_metadata'];

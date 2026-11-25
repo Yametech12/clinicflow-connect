@@ -5,8 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ClinicFlow PH: Your clinic dashboard</title>
 <meta name="description" content="Your ClinicFlow PH dashboard: clinic profile, account connections, and recent bookings.">
+<meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#faf8f3">
 <meta name="theme-color" content="#141a17" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://clinicflow-connect-two.vercel.app/dashboard">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Cpath d='M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z' fill='%23ffffff'/%3E%3C/svg%3E">
 <style>
   :root{
@@ -20,8 +26,9 @@
     --save-bg:#1c2420;
     --save-text:#ffffff;
     --save-hover:#2d3832;
-    --amber:#b45309;
+    --amber:#9a4307;
     --amber-bg:#fdf3e3;
+    --rule:#1c2420;
     --green:#15803d;
     --green-bg:#e9f6ec;
     --gray-bg:#efece5;
@@ -49,6 +56,7 @@
       --save-hover:#d6d0c2;
       --amber:#fbbf24;
       --amber-bg:#3b280c;
+      --rule:#46524b;
       --green:#4ade80;
       --green-bg:#132d1c;
       --gray-bg:#26302b;
@@ -82,6 +90,9 @@
     display:grid;grid-template-columns:repeat(4,1fr);gap:8px;flex:1;min-width:240px;
   }
   .seg{display:flex;flex-direction:column;gap:4px}
+  a.seg{text-decoration:none;cursor:pointer}
+  a.seg:hover .seg-label,a.seg:focus-visible .seg-label{color:var(--teal)}
+  a.seg:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .seg-track{height:6px;border-radius:999px;background:var(--line);overflow:hidden}
   .seg-fill{height:100%;width:0;background:var(--teal);transition:width .25s ease}
   .seg.done .seg-fill{width:100%}
@@ -89,22 +100,40 @@
   .seg.done .seg-label{color:var(--ink)}
   .progress-count{font-size:12.5px;font-weight:700;color:var(--ink);white-space:nowrap}
   header.top{
-    border-bottom:2px solid var(--ink);
+    border-bottom:2px solid var(--rule);
     padding:18px 0 14px;
     display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
   }
   .brand{font-family:Georgia,"Times New Roman",serif;font-size:26px;font-weight:700;letter-spacing:.2px}
   .brand span{color:var(--teal)}
+  .brand svg{vertical-align:-5px;margin-right:8px}
   .head-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   .topnote{font-size:13px;color:var(--muted)}
-  a.logoutbtn{
+  .logoutform{display:inline-flex}
+  button.logoutbtn{
     display:inline-flex;align-items:center;justify-content:center;min-height:48px;
     padding:10px 16px;border:1px solid var(--line);border-radius:4px;
-    color:var(--ink);text-decoration:none;font-size:14px;font-weight:600;background:var(--card);
+    color:var(--ink);font-size:14px;font-weight:600;background:var(--card);
+    cursor:pointer;font-family:inherit;transition:background-color .15s ease,border-color .15s ease,color .15s ease;
   }
-  a.logoutbtn:hover{border-color:var(--teal);color:var(--teal)}
-  a.logoutbtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-  section{padding:30px 0 6px;scroll-margin-top:76px}
+  button.logoutbtn:hover{border-color:var(--teal);color:var(--teal)}
+  button.logoutbtn:active{border-color:var(--teal);color:var(--teal)}
+  button.logoutbtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .dash-shell{padding:18px 0 30px}
+  .shell-note{display:flex;align-items:center;gap:10px;margin-top:26px;font-size:14px;color:var(--muted)}
+  .shell-lines{margin-top:22px;display:flex;flex-direction:column;gap:14px}
+  .shell-line{height:14px;border-radius:4px;background:var(--line);opacity:.55}
+  .shell-line.w85{width:85%}
+  .shell-line.w60{width:60%}
+  .shell-line.w40{width:40%}
+  .shell-retry{margin-top:22px;max-width:560px}
+  .shell-retry p{font-size:14.5px;margin-bottom:12px}
+  .dash-h1{font-family:Georgia,"Times New Roman",serif;font-size:24px;padding:30px 0 0}
+  .welcomebox{
+    margin:16px 0 0;background:var(--card);border:1px solid var(--line);
+    border-left:4px solid var(--teal);padding:16px 18px;font-size:14.5px;
+  }
+  section{padding:36px 0 0;scroll-margin-top:76px}
   h2{font-family:Georgia,"Times New Roman",serif;font-size:24px;margin-bottom:6px}
   .sub{color:var(--muted);font-size:14.5px;max-width:640px}
   .sub + .sub{margin-top:8px}
@@ -127,6 +156,8 @@
     font-size:14px;font-weight:600;cursor:pointer;
   }
   button.savebtn:hover{background:var(--save-hover)}
+  button.savebtn:active{background:var(--save-hover)}
+  button.savebtn{transition:background-color .15s ease}
   button.savebtn:disabled{opacity:.6;cursor:wait}
   button.savebtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .return-banner{
@@ -151,9 +182,11 @@
   }
   .pill.checking{animation:pillPulse 1.2s ease-in-out infinite}
   @keyframes pillPulse{0%,100%{opacity:1}50%{opacity:.55}}
+  .dot.pending{animation:pillPulse 1.2s ease-in-out infinite}
   @media (prefers-reduced-motion: reduce){
     .pill.checking{animation:none}
     .seg-fill{transition:none}
+    .dot.pending{animation:none}
   }
   .pill.pending{background:var(--amber-bg);color:var(--amber)}
   .pill.ready{background:var(--gray-bg);color:var(--ink)}
@@ -164,6 +197,8 @@
     font-size:14.5px;font-weight:600;cursor:pointer;text-align:center;width:100%;
   }
   button.connect:hover{background:var(--teal-dark)}
+  button.connect:active{background:var(--teal-dark)}
+  button.connect{transition:background-color .15s ease}
   button.connect:disabled{opacity:.65;cursor:wait}
   button.connect:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .cardmsg{font-size:13px;color:var(--muted);display:none}
@@ -182,6 +217,12 @@
     margin-top:16px;background:var(--card);border:1px solid var(--line);
     border-left:4px solid var(--teal);padding:20px 22px;display:flex;flex-direction:column;gap:8px;
   }
+  .pilotbox.live{border-left-color:var(--green)}
+  .pilot-grid{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:center}
+  .pilot-text{display:flex;flex-direction:column;gap:8px}
+  .pilot-price{font-family:Georgia,"Times New Roman",serif;font-size:34px;font-weight:700;line-height:1.1}
+  .pilot-price-cap{font-size:12.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-top:2px}
+  .pilot-regular{font-size:13.5px;color:var(--muted);margin-top:6px}
   .pilotbox p{font-size:14.5px;color:var(--ink)}
   .pilotbox p.pilotnext{font-size:14px;color:var(--muted)}
   .statusbox{
@@ -204,14 +245,16 @@
   .bookingsbox{
     margin-top:16px;background:var(--card);border:1px solid var(--line);padding:20px 22px;
   }
+  .bookingsbox.warn{border-left:4px solid var(--amber)}
   .bookings-note{font-size:14px;color:var(--muted)}
+  .bookings-note .dot{margin-right:8px}
   .bookings-list{list-style:none}
   .booking-row{padding:10px 0;border-bottom:1px solid var(--line)}
   .booking-row:last-child{border-bottom:none}
   .booking-main{font-size:14.5px}
   .booking-meta{font-size:12.5px;color:var(--muted);margin-top:2px}
   footer{
-    margin-top:44px;border-top:2px solid var(--ink);padding:16px 0 30px;
+    margin-top:44px;border-top:2px solid var(--rule);padding:16px 0 30px;
     font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:8px;
   }
   .footer-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -219,43 +262,63 @@
     .cards{grid-template-columns:1fr}
     form.profile{grid-template-columns:1fr}
     .formactions{flex-direction:column;align-items:stretch;gap:10px}
+    .pilot-grid{grid-template-columns:1fr}
   }
 </style>
 </head>
 <body>
+<div class="wrap dash-shell" id="dashShell">
+  <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0f766e"/><path d="M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="#ffffff"/></svg>ClinicFlow <span>PH</span></div>
+  <div class="shell-note" id="shellNote"><span class="pill checking">Loading</span><span>Loading your dashboard</span></div>
+  <div class="shell-lines" id="shellLines" aria-hidden="true">
+    <div class="shell-line w85"></div>
+    <div class="shell-line w60"></div>
+    <div class="shell-line w40"></div>
+  </div>
+  <div class="shell-retry" id="shellRetry" hidden>
+    <p>We could not reach the server to open your dashboard. Your accounts are unchanged and safe. Check your connection, then try again.</p>
+    <button class="savebtn" type="button" id="shellRetryBtn">Try again</button>
+  </div>
+</div>
+
 <div class="wrap" id="dashWrap" style="visibility:hidden">
 
   <nav class="progress-bar" aria-label="Setup progress">
     <div class="progress-inner">
       <div class="progress-segments">
-        <div class="seg" id="prog-profile">
+        <a class="seg" id="prog-profile" href="#profile">
           <div class="seg-track"><div class="seg-fill"></div></div>
           <span class="seg-label">Profile</span>
-        </div>
-        <div class="seg" id="prog-facebook">
+        </a>
+        <a class="seg" id="prog-facebook" href="#connect">
           <div class="seg-track"><div class="seg-fill"></div></div>
           <span class="seg-label">Facebook</span>
-        </div>
-        <div class="seg" id="prog-google">
+        </a>
+        <a class="seg" id="prog-google" href="#connect">
           <div class="seg-track"><div class="seg-fill"></div></div>
           <span class="seg-label">Google</span>
-        </div>
-        <div class="seg" id="prog-telegram">
+        </a>
+        <a class="seg" id="prog-telegram" href="#connect">
           <div class="seg-track"><div class="seg-fill"></div></div>
           <span class="seg-label">Telegram</span>
-        </div>
+        </a>
       </div>
       <div class="progress-count" id="progressCount">0 of 4 done</div>
     </div>
   </nav>
 
   <header class="top">
-    <div class="brand">ClinicFlow <span>PH</span></div>
+    <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0f766e"/><path d="M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="#ffffff"/></svg>ClinicFlow <span>PH</span></div>
     <div class="head-actions">
       <div class="topnote" id="signedInAs">Signed in</div>
-      <a class="logoutbtn" href="/api/logout">Log out</a>
+      <form class="logoutform" method="post" action="/api/logout"><button class="logoutbtn" type="submit">Log out</button></form>
     </div>
   </header>
+
+  <main>
+  <h1 class="dash-h1">Your clinic dashboard</h1>
+
+  <div class="welcomebox" id="welcomeBox">Welcome to your ClinicFlow dashboard. Four steps turn your bot on, in order: save your clinic profile, connect Facebook, connect Google, then link Telegram. Start with Step 1 on the Facebook card below once your profile is saved; the bot starts answering as soon as Facebook and Google are both connected.</div>
 
   <section id="profile">
     <h2>Your clinic profile</h2>
@@ -292,7 +355,7 @@
       and Telegram. ClinicFlow only receives the permission each button asks for, nothing more.
     </p>
     <p class="sub">
-      Connect all three. Facebook lets the bot answer patients, Google is where bookings are written down, and Telegram is how you hear about each booking right away.
+      Connect all three. Facebook lets the bot answer patients, Google is where bookings are written down, and Telegram is how you hear about each booking right away. Do them in the order shown: Facebook first, then Google, then Telegram.
     </p>
 
     <div class="cards">
@@ -303,7 +366,7 @@
         <p class="safety-line">Safe: you sign in on Facebook's own page. ClinicFlow never sees your password, and you can remove access anytime in Facebook Settings.</p>
         <span class="pill checking" data-pill>Checking status</span>
         <button class="connect" data-connect="facebook">Connect Facebook Page</button>
-        <p class="cardmsg" data-msg></p>
+        <p class="cardmsg" data-msg aria-live="polite"></p>
       </div>
 
       <div class="card" id="card-google">
@@ -313,7 +376,7 @@
         <p class="safety-line">Safe: you sign in on Google's own page. The booking sheet and calendar are created inside your Google account, and you can remove access anytime in your Google Account settings.</p>
         <span class="pill checking" data-pill>Checking status</span>
         <button class="connect" data-connect="google">Connect Google</button>
-        <p class="cardmsg" data-msg></p>
+        <p class="cardmsg" data-msg aria-live="polite"></p>
       </div>
 
       <div class="card" id="card-telegram">
@@ -327,16 +390,28 @@
           <div class="code" data-tgcode></div>
           <p data-tgtext></p>
         </div>
-        <p class="cardmsg" data-msg></p>
+        <p class="cardmsg" data-msg aria-live="polite"></p>
       </div>
     </div>
   </section>
 
   <section id="pilot">
     <h2>Start with a pilot setup</h2>
-    <div class="pilotbox">
-      <p>We set up Sprint 1 for your clinic: the Messenger bot that answers prices and books appointments, connected to your own accounts above. Pilot price: ₱5,500 one time (regular setup ₱12,000). You own every account and file; we only install and configure.</p>
-      <p class="pilotnext" id="pilotNext">To get started, finish the three connections above. Your pilot begins once your Page, Google, and Telegram are all connected.</p>
+    <div class="pilotbox" id="pilotBox">
+      <div class="pilot-grid">
+        <div class="pilot-text">
+          <p>We set up the pilot for your clinic: a Messenger bot on your own Page that answers price and service questions from your price sheet, collects the patient's name, mobile number, and preferred schedule, writes each booking into your own Google Sheet and Calendar, and sends you a Telegram alert for every confirmed booking. Setup takes 3 days, done by us on your own accounts.</p>
+          <p>You own every account and file; we only install and configure.</p>
+          <p>What we need from you: your price list, your clinic hours, and about 15 minutes to sign in to your own Facebook, Google, and Telegram using the steps in your dashboard.</p>
+          <p>Connecting your accounts is free and does not start any payment. When you are ready to begin the pilot, we confirm it with you first. Pilot terms: 50 percent deposit by GCash, Maya, or InstaPay to start, and the balance only at the live walkthrough, when you see the bot answering on your own Page.</p>
+        </div>
+        <div class="pilot-priceblock">
+          <div class="pilot-price">₱5,500</div>
+          <div class="pilot-price-cap">One-time pilot</div>
+          <div class="pilot-regular">Regular setup ₱12,000</div>
+        </div>
+      </div>
+      <p class="pilotnext" id="pilotNext">To get started, finish the three connections above.</p>
     </div>
   </section>
 
@@ -345,7 +420,7 @@
     <p class="sub">This list is read live from the server, so what you see is the real state of your setup. A step is only marked connected after the server confirms it.</p>
     <div class="statusbox">
       <h3>Your connections</h3>
-      <div class="status-summary" id="statusSummary"></div>
+      <div class="status-summary" id="statusSummary" aria-live="polite"></div>
       <ul>
         <li><span>Facebook Page</span><span class="val"><span class="dot" id="dot-facebook"></span><span id="st-facebook">Checking</span></span></li>
         <li><span>Google (Sheets and Calendar)</span><span class="val"><span class="dot" id="dot-google"></span><span id="st-google">Checking</span></span></li>
@@ -358,17 +433,20 @@
   <section id="bookings">
     <h2>Recent bookings</h2>
     <p class="sub">The latest bookings written to your booking sheet, newest first.</p>
-    <div class="bookingsbox">
-      <p class="bookings-note" id="bookingsNote">Reading your booking sheet.</p>
+    <div class="bookingsbox" id="bookingsBox">
+      <p class="bookings-note" id="bookingsNote"><span class="dot pending" id="bookingsDot"></span><span id="bookingsText">Reading your booking sheet.</span></p>
       <ul class="bookings-list" id="bookingsList"></ul>
     </div>
   </section>
+
+  </main>
 
   <footer>
     <div class="footer-top">
       <div>ClinicFlow PH. Built for Philippine dental clinics.</div>
       <div>Made by Mohammad Sidique Ibrahim</div>
     </div>
+    <div>Questions about your setup? Reply to the message that sent you this link and we will help.</div>
     <div>Your accounts stay yours. You can disconnect ClinicFlow anytime from your Facebook Settings and your Google Account permissions.</div>
   </footer>
 
@@ -488,8 +566,19 @@
     var pilotNext = document.getElementById('pilotNext');
     if (pilotNext) {
       pilotNext.textContent = connCount === 3
-        ? 'All three connected. Your bot is live: it can now answer patients and take bookings on your Page.'
-        : 'To get started, finish the three connections above. Your pilot begins once your Page, Google, and Telegram are all connected.';
+        ? 'All three connected. Your accounts are ready. The pilot setup is the part we do for you: we load your full price list and clinic details into the bot, test real bookings end to end on your Page, and walk you through everything live. Pilot price: ₱5,500 one time. To start, message us and we will confirm your pilot and the deposit step (50 percent by GCash, Maya, or InstaPay; balance at the walkthrough).'
+        : 'To get started, finish the three connections above.';
+    }
+
+    var pilotBox = document.getElementById('pilotBox');
+    if (pilotBox) {
+      if (connCount === 3) pilotBox.classList.add('live');
+      else pilotBox.classList.remove('live');
+    }
+
+    var welcome = document.getElementById('welcomeBox');
+    if (welcome) {
+      welcome.style.display = connCount === 3 ? 'none' : '';
     }
   }
 
@@ -697,7 +786,7 @@
             'One or more steps are still being switched on by us. Your part is done; there is nothing for you to fix.';
         } else {
           document.getElementById('statusNote').textContent =
-            'Everything on our side is switched on. Use the buttons above to connect or update your accounts.';
+            'Everything on our side is switched on. Use the buttons above to connect or update your accounts. Kada connect nimo, makita dayon diri kung ni-agi ba.';
         }
       })
       .catch(function () {
@@ -710,26 +799,33 @@
 
   function renderBookings(data) {
     var note = document.getElementById('bookingsNote');
+    var text = document.getElementById('bookingsText');
+    var dot = document.getElementById('bookingsDot');
+    var box = document.getElementById('bookingsBox');
     var list = document.getElementById('bookingsList');
-    if (!note || !list) return;
+    if (!note || !text || !list) return;
     list.textContent = '';
+    if (dot) dot.style.display = 'none';
+    if (box) box.classList.remove('warn');
 
     if (!data || data.status === 'google_unavailable') {
-      note.textContent =
+      if (box) box.classList.add('warn');
+      text.textContent =
         (data && data.message) ||
         'We could not read your booking sheet right now. Please reconnect Google and try again.';
       return;
     }
     if (data.status === 'no_sheet') {
-      note.textContent = 'Your booking sheet is not ready yet. Reconnect Google so we can create one.';
+      if (box) box.classList.add('warn');
+      text.textContent = 'Your booking sheet is not ready yet. Reconnect Google so we can create one.';
       return;
     }
     var rows = Array.isArray(data.bookings) ? data.bookings : [];
     if (!rows.length) {
-      note.textContent = 'No bookings yet. New bookings from your Page will appear here.';
+      text.textContent = 'No bookings yet. Once a patient books through your Page, it will appear here right away. Diri nimo makita ang matag bag-ong booking.';
       return;
     }
-    note.textContent = '';
+    text.textContent = 'Showing the latest 10. Your full list is in your booking sheet; the link is in the Google card above.';
     rows.forEach(function (b) {
       var li = document.createElement('li');
       li.className = 'booking-row';
@@ -921,9 +1017,34 @@
 
   // Login gate: the dashboard only opens for a clinic session bound to a
   // Google account. Anything else goes back to the landing login prompt.
+  // GT-136 C1: a loading shell (brand, skeleton, pulsing pill) is visible
+  // from first paint outside #dashWrap; it hides in the same step the wrap
+  // is revealed. A failed or non-OK check shows an inline retry state in
+  // the shell instead of bouncing a logged-in owner to the login banner.
+  function showShellRetry() {
+    var note = document.getElementById('shellNote');
+    if (note) note.style.display = 'none';
+    var lines = document.getElementById('shellLines');
+    if (lines) lines.style.display = 'none';
+    var retry = document.getElementById('shellRetry');
+    if (retry) retry.hidden = false;
+  }
+
+  function hideShellRetry() {
+    var note = document.getElementById('shellNote');
+    if (note) note.style.display = '';
+    var lines = document.getElementById('shellLines');
+    if (lines) lines.style.display = '';
+    var retry = document.getElementById('shellRetry');
+    if (retry) retry.hidden = true;
+  }
+
   function gate() {
     fetchWithTimeout('/api/clinic', {}, 8000)
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (r.status >= 500) throw new Error('server error ' + r.status);
+        return r.json();
+      })
       .then(function (clinic) {
         if (!clinic || clinic.logged_in !== true) {
           window.location.replace('/?login=1');
@@ -934,6 +1055,8 @@
         if (signedInAs) {
           signedInAs.textContent = email ? 'Signed in as ' + email : 'Signed in';
         }
+        var shell = document.getElementById('dashShell');
+        if (shell) shell.style.display = 'none';
         var wrap = document.getElementById('dashWrap');
         if (wrap) wrap.style.visibility = 'visible';
         render();
@@ -941,8 +1064,16 @@
         loadBookings();
       })
       .catch(function () {
-        window.location.replace('/?login=1');
+        showShellRetry();
       });
+  }
+
+  var retryBtn = document.getElementById('shellRetryBtn');
+  if (retryBtn) {
+    retryBtn.addEventListener('click', function () {
+      hideShellRetry();
+      gate();
+    });
   }
 
   gate();

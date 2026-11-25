@@ -1,4 +1,4 @@
-# ClinicFlow Connect — Local Testing & Live Verification Guide
+# ClinicFlow Connect: Local Testing & Live Verification Guide
 
 ## 1. Local Checks Run
 
@@ -6,18 +6,18 @@ All syntax and local integration checks were executed after the final edit on No
 
 ### Syntax verification (`node --check`)
 Ran `node --check` on every `.js` file under `api/`:
-- `api/_google.js` — PASS
-- `api/_pipeline.js` — PASS
-- `api/_session.js` — PASS
-- `api/_store.js` — PASS
-- `api/callback/facebook.js` — PASS
-- `api/callback/google.js` — PASS
-- `api/clinic.js` — PASS
-- `api/connect/facebook.js` — PASS
-- `api/connect/google.js` — PASS
-- `api/connect/telegram.js` — PASS
-- `api/health.js` — PASS
-- `api/webhook.js` — PASS
+- `api/_google.js`: PASS
+- `api/_pipeline.js`: PASS
+- `api/_session.js`: PASS
+- `api/_store.js`: PASS
+- `api/callback/facebook.js`: PASS
+- `api/callback/google.js`: PASS
+- `api/clinic.js`: PASS
+- `api/connect/facebook.js`: PASS
+- `api/connect/google.js`: PASS
+- `api/connect/telegram.js`: PASS
+- `api/health.js`: PASS
+- `api/webhook.js`: PASS
 
 Also validated the inline `<script>` block inside `index.html` using Node's `vm.Script`.
 
@@ -153,3 +153,23 @@ Result on Nov 25, 2026: **24 of 24 tests passed** (`node tests/run-tests.js`; th
 Page checks: the inline `<script>` blocks of both `index.html` and `dashboard.html` parse under `vm.Script`; a grep confirms the landing contains no profile form, connect cards, status box, or progress bar markup; `node --check` passes on every `.js` file under `api/` and `tests/`; the repo-wide em dash grep is clean; no environment variable names appear in either page or in any new user-facing string. `api/webhook.js` and `api/_pipeline.js` are byte-identical to GT-134 (no diff).
 
 Still only provable live: that Vercel serves `dashboard.html` at `/dashboard` under `cleanUrls` (smoke after deploy), a real Google login round trip including the new `openid` scope on the consent screen, a real adoption from a second browser, and the Facebook callback landing on `/dashboard?connected=facebook` with a real Page.
+
+## 6. GT-136 Full Force Pass Verification (Nov 25, 2026)
+
+Security hardening (Part A), perf/SEO/headers (Part B), design (Part C), and copy (Part D) from the four GT-136 audit reports, adjudicated by `IMPROVEMENT_BRIEF_GT136.md`. Result: **33 of 33 tests passed** (`node tests/run-tests.js`; the 24 GT-135 tests, one of them revised, plus 9 new GT-136 cases). One deliberate test change: the GT-135 test 16 expectation that a legacy record binds a `cf_key` on `GET /api/clinic` is reversed by A3 (keys bind only inside OAuth callbacks now); the revised case is test 16b below.
+
+New and revised cases:
+
+- Connect gate (A1): an id-only `cf_clinic` cookie gets 403 `INVALID_SESSION` from `GET /api/connect/google`, `/api/connect/facebook`, and `/api/connect/telegram` (and no Telegram linking code is minted); the full cookie pair still works.
+- Bookings gate (A2): on a Google-bound clinic, an id-only cookie and a wrong-key cookie both get 401 from `GET /api/bookings`; the valid pair reads bookings.
+- GET never binds (A3, test 16b): a legacy keyless record read with only a `cf_clinic` cookie returns `authenticated: false`, redacted fields, no `cf_key` Set-Cookie, and still has no `keyHash` afterwards.
+- Logout rotation (A4, extends test 23): `POST /api/logout` is accepted alongside GET; the record's `keyHash` rotates server-side, so the captured cookie pair afterwards gets 403 on `POST /api/clinic` and 401 on `GET /api/bookings`.
+- Adoption safety (A5): adoption no longer carries the `facebook` section (the `fb_page:<pageId>` index keeps routing to the source clinic); profile and Telegram still carry over when the source clinic is unbound; when the source clinic is bound to a different Google account, carry-over is skipped entirely.
+- Facebook selection (A6): completing a multi-Page selection by GET with the token in the URL is refused (400, nothing stored); a POST from a different session is refused (403); a POST from the initiating session connects the chosen Page (302 to `/dashboard?connected=facebook`).
+- Bounded bookings read (A7): the outbound Sheets range is capped at `Leads_Bookings!A2:J5001`; a mocked 5000-row sheet still returns the newest 10.
+- Google callback honesty (A8): a userinfo failure returns the 500 deck error page and stores nothing (no google section, no binding); a Google account switch clears the stored `spreadsheetId`/`spreadsheetUrl` so a fresh Sheet is provisioned under the new account, the old `sub` index is removed, and the new one points at the clinic.
+- Google identity index (A10): `getClinicIdByGoogleSub` verifies the record's own `googleSub` against the index and self-heals (stale entry deleted, record's own entry restored, treated as unbound) on disagreement.
+
+Static verification: `node --check` passes on every `.js` file under `api/` and `tests/`; both pages' inline scripts parse under `vm.Script`; `vercel.json` parses as JSON with three header entries (`/api/(.*)` cache + robots, `/dashboard` robots, `/(.*)` security set); the repo-wide em dash grep is clean (including the 13 pre-existing hits scrubbed from this file); no environment variable names appear in either page; "Sprint 1" no longer appears on the landing, the dashboard, or the JSON-LD. `og-image.png` (1200x630) was generated with PIL and visually verified by reading it back; favicon.ico, favicon.svg, apple-touch-icon.png, icon-192.png, and icon-512.png were generated from the existing teal chat-bubble mark.
+
+Still only provable live (parent smoke after deploy): the CSP header set against the real pages (login redirect to Google is a top-level navigation and the OAuth JSON fetch is same-origin, so both should pass), the Facebook Page picker round trip with a real multi-Page account, an account-switch re-login against a real second Google account, and the dashboard loading shell on a slow connection.
