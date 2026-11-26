@@ -13,8 +13,10 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Cpath d='M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z' fill='%23ffffff'/%3E%3C/svg%3E">
 <style>
+  /* Shared tokens, GT-138: spacing scale 4, 8, 12, 16, 24, 32, 48. Type scale: 12 labels, 13 notes, 14 secondary body, 16 body and lede, headings at 18, 24, 32, 44 by role. Display numerals (brand, step numbers, prices) sit outside the text scale. */
+  /* Radius rule, GT-138: surfaces 0, tags 2px, controls 4px. */
+  .brand-mark{fill:var(--teal)}
   :root{
     --paper:#faf8f3;
     --ink:#1c2420;
@@ -62,10 +64,13 @@
       --gray-bg:#26302b;
       --card:#1d2420;
       --tg-bg:#162823;
-      --status-bg:#101512;
+      --status-bg:#1a211c;
       --status-ink:#ece8dd;
       --status-muted:#9aa79f;
-      --status-line:#2a332e;
+      --status-line:#4a574f;
+      --dot-idle:#8a948e;
+      --dot-pending:#fbbf24;
+      --dot-linked:#4ade80;
     }
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -80,25 +85,25 @@
   .progress-bar{
     position:sticky;top:0;z-index:20;
     background:var(--paper);
-    border-bottom:1px solid var(--line);
+    border-bottom:2px solid var(--rule);
     padding:10px 0;
   }
   .progress-inner{
-    display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
   }
   .progress-segments{
     display:grid;grid-template-columns:repeat(4,1fr);gap:8px;flex:1;min-width:240px;
   }
   .seg{display:flex;flex-direction:column;gap:4px}
-  a.seg{text-decoration:none;cursor:pointer}
+  a.seg{text-decoration:none;cursor:pointer;min-height:44px;justify-content:center}
   a.seg:hover .seg-label,a.seg:focus-visible .seg-label{color:var(--teal)}
   a.seg:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-  .seg-track{height:6px;border-radius:2px;background:var(--line);overflow:hidden}
-  .seg-fill{height:100%;width:0;background:var(--teal);transition:width .25s ease}
+  .seg-track{height:2px;border-radius:0;background:var(--line);overflow:hidden}
+  .seg-fill{height:100%;width:0;background:var(--rule);transition:width .25s ease}
   .seg.done .seg-fill{width:100%}
-  .seg-label{font-size:11.5px;font-weight:600;color:var(--muted)}
+  .seg-label{font-size:12px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--muted)}
   .seg.done .seg-label{color:var(--ink)}
-  .progress-count{font-size:12.5px;font-weight:700;color:var(--ink);white-space:nowrap}
+  .progress-count{font-size:12px;font-weight:700;color:var(--ink);white-space:nowrap}
   header.top{
     border-bottom:2px solid var(--rule);
     padding:18px 0 14px;
@@ -119,45 +124,44 @@
   button.logoutbtn:hover{border-color:var(--teal);color:var(--teal)}
   button.logoutbtn:active{border-color:var(--teal);color:var(--teal)}
   button.logoutbtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-  .dash-shell{padding:18px 0 30px}
+  .dash-shell{padding-top:18px;padding-bottom:30px}
   .shell-note{display:flex;align-items:center;gap:10px;margin-top:26px;font-size:14px;color:var(--muted)}
   .shell-lines{margin-top:22px;display:flex;flex-direction:column;gap:14px}
-  .shell-line{height:14px;border-radius:4px;background:var(--line);opacity:.55}
+  .shell-line{height:14px;border-radius:0;background:var(--line);opacity:.55}
   .shell-line.w85{width:85%}
   .shell-line.w60{width:60%}
   .shell-line.w40{width:40%}
   .shell-retry{margin-top:22px;max-width:560px}
-  .shell-retry p{font-size:14.5px;margin-bottom:12px}
-  .dash-h1{font-family:Georgia,"Times New Roman",serif;font-size:28px;padding:30px 0 0}
+  .shell-retry p{font-size:14px;margin-bottom:12px}
+  .dash-h1{font-family:Georgia,"Times New Roman",serif;font-size:32px;padding:30px 0 0}
   .welcomebox{
     margin:16px 0 0;background:var(--card);border:1px solid var(--line);
-    border-top:2px solid var(--rule);padding:16px 18px;font-size:14.5px;
+    border-top:2px solid var(--rule);padding:20px 22px;font-size:14px;
   }
   section{padding:36px 0 0;scroll-margin-top:76px}
   h2{font-family:Georgia,"Times New Roman",serif;font-size:24px;margin-bottom:6px}
-  .sub{color:var(--muted);font-size:14.5px;max-width:640px}
+  .sub{color:var(--muted);font-size:14px;max-width:640px}
   .sub + .sub{margin-top:8px}
   form.profile{
-    margin-top:16px;background:var(--card);border:1px solid var(--line);padding:20px 22px;
+    margin-top:16px;background:var(--card);border:1px solid var(--line);border-top:2px solid var(--rule);padding:20px 22px;
     display:grid;grid-template-columns:1fr 1fr;gap:14px;
   }
   form.profile .full{grid-column:1 / -1}
-  label{font-size:12.5px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px}
+  label{font-size:12px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px}
   input[type=text]{
-    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:4px;
+    width:100%;padding:10px 12px;min-height:48px;border:1px solid var(--line);border-radius:4px;
     font-size:16px;background:var(--card);color:var(--ink);
   }
   input[type=text]:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
   .formactions{grid-column:1 / -1;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-  .formnote{font-size:12.5px;color:var(--muted)}
+  .formnote{font-size:12px;color:var(--muted)}
   button.savebtn{
     background:var(--save-bg);color:var(--save-text);border:none;border-radius:4px;
     padding:10px 16px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;
-    font-size:14px;font-weight:600;cursor:pointer;
+    font-size:14px;font-weight:600;cursor:pointer;transition:background-color .15s ease;
   }
   button.savebtn:hover{background:var(--save-hover)}
   button.savebtn:active{background:var(--save-hover)}
-  button.savebtn{transition:background-color .15s ease}
   button.savebtn:disabled{opacity:.6;cursor:wait}
   button.savebtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .return-banner{
@@ -170,12 +174,13 @@
   .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px}
   .card{
     background:var(--card);border:1px solid var(--line);border-top:2px solid var(--rule);
-    padding:20px;display:flex;flex-direction:column;gap:10px;
+    padding:20px 22px;display:flex;flex-direction:column;gap:10px;
   }
+  a:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .stepnum{font-size:12px;font-weight:700;letter-spacing:2px;color:var(--teal)}
   .card h3{font-size:18px;font-family:Georgia,"Times New Roman",serif}
   .card p.cardbody{font-size:14px;color:var(--muted);flex:1}
-  .safety-line{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:8px}
+  .safety-line{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:8px}
   .pill{
     display:inline-block;font-size:12px;font-weight:700;padding:3px 10px;border-radius:2px;
     background:var(--gray-bg);color:var(--muted);align-self:flex-start;
@@ -193,25 +198,24 @@
   .pill.linked{background:var(--green-bg);color:var(--green)}
   button.connect{
     background:var(--teal);color:var(--btn-text);border:none;border-radius:4px;
-    padding:11px 14px;min-height:48px;display:flex;align-items:center;justify-content:center;
-    font-size:14.5px;font-weight:600;cursor:pointer;text-align:center;width:100%;
+    padding:11px 20px;min-height:48px;display:flex;align-items:center;justify-content:center;
+    font-size:15px;font-weight:600;cursor:pointer;text-align:center;width:100%;transition:background-color .15s ease;
   }
   button.connect:hover{background:var(--teal-dark)}
   button.connect:active{background:var(--teal-dark)}
-  button.connect{transition:background-color .15s ease}
   button.connect:disabled{opacity:.65;cursor:wait}
   button.connect:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .cardmsg{font-size:13px;color:var(--muted);display:none}
   .cardmsg.show{display:block}
-  .cardmsg a{color:var(--teal);font-weight:600}
+  .cardmsg a{color:var(--teal);font-weight:600;display:inline-block;padding:12px 0}
   .tgcode{
-    visibility:hidden;min-height:118px;border:1px dashed var(--teal);
+    display:none;border:1px dashed var(--teal);
     background:var(--tg-bg);padding:12px;text-align:center;
-    display:flex;flex-direction:column;justify-content:center;
+    flex-direction:column;justify-content:center;
   }
-  .tgcode.show{visibility:visible}
+  .tgcode.show{display:flex}
   .tgcode .code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:24px;letter-spacing:4px;font-weight:700;color:var(--teal)}
-  .tgcode p{font-size:12.5px;color:var(--muted);margin-top:4px}
+  .tgcode p{font-size:12px;color:var(--muted);margin-top:4px}
   .tgcode a{color:var(--teal);font-weight:600}
   .pilotbox{
     margin-top:16px;background:var(--card);border:1px solid var(--line);
@@ -219,17 +223,18 @@
   }
   .pilotbox.live{border-top-color:var(--green)}
   .pilot-grid{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:center}
-  .pilot-priceblock{border-left:1px solid var(--line);padding-left:24px}
+  .pilot-priceblock{border-left:1px solid var(--line);padding-left:16px}
   .pilot-text{display:flex;flex-direction:column;gap:8px}
   .pilot-price{font-family:Georgia,"Times New Roman",serif;font-size:34px;font-weight:700;line-height:1.1}
-  .pilot-price-cap{font-size:12.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-top:2px}
-  .pilot-regular{font-size:13.5px;color:var(--muted);margin-top:6px}
-  .pilotbox p{font-size:14.5px;color:var(--ink)}
+  .pilot-price-cap{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-top:2px}
+  .pilot-regular{font-size:13px;color:var(--muted);margin-top:6px}
+  .pilotbox p{font-size:16px;color:var(--ink)}
   .pilotbox p.pilotnext{font-size:14px;color:var(--muted)}
   .statusbox{
     margin-top:16px;background:var(--status-bg);color:var(--status-ink);padding:20px 22px;
+    border:1px solid var(--status-line);
   }
-  .statusbox h3{font-family:Georgia,"Times New Roman",serif;font-size:17px;margin-bottom:8px}
+  .statusbox h3{font-family:Georgia,"Times New Roman",serif;font-size:18px;margin-bottom:8px}
   .status-summary{
     font-size:14px;color:var(--status-ink);background:rgba(255,255,255,.06);
     padding:9px 12px;border-radius:2px;margin-bottom:10px;display:none;
@@ -242,19 +247,19 @@
   .dot{width:9px;height:9px;border-radius:50%;background:var(--dot-idle);flex-shrink:0;display:inline-block}
   .dot.linked{background:var(--dot-linked)}
   .dot.pending{background:var(--dot-pending)}
-  .statusnote{font-size:12.5px;color:var(--status-muted);margin-top:10px}
+  .statusnote{font-size:12px;color:var(--status-muted);margin-top:10px}
   .bookingsbox{
-    margin-top:16px;background:var(--card);border:1px solid var(--line);padding:20px 22px;
+    margin-top:16px;background:var(--card);border:1px solid var(--line);border-top:2px solid var(--rule);padding:20px 22px;
   }
   .bookingsbox.warn{background:var(--amber-bg)}
   .bookingsbox.warn .bookings-note{color:var(--amber);font-weight:600}
   .bookings-note{font-size:14px;color:var(--muted)}
   .bookings-note .dot{margin-right:8px}
   .bookings-list{list-style:none}
-  .booking-row{padding:10px 0;border-bottom:1px solid var(--line)}
+  .booking-row{padding:8px 12px;border-bottom:1px solid var(--line)}
   .booking-row:last-child{border-bottom:none}
-  .booking-main{font-size:14.5px}
-  .booking-meta{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .booking-main{font-size:14px}
+  .booking-meta{font-size:12px;color:var(--muted);margin-top:2px}
   footer{
     margin-top:44px;border-top:2px solid var(--rule);padding:16px 0 30px;
     font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:8px;
@@ -267,11 +272,18 @@
     .pilot-grid{grid-template-columns:1fr}
     .pilot-priceblock{border-left:none;border-top:1px solid var(--line);padding:14px 0 0}
   }
+  @media (max-width:560px){
+    .brand{font-size:22px}
+    header.top{padding:14px 0 10px}
+    .head-actions{flex:1;justify-content:flex-end}
+    .head-actions .logoutform{order:2}
+    .topnote{font-size:12px;order:3;flex-basis:100%}
+  }
 </style>
 </head>
 <body>
 <div class="wrap dash-shell" id="dashShell">
-  <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0f766e"/><path d="M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="#ffffff"/></svg>ClinicFlow <span>PH</span></div>
+  <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect class="brand-mark" width="32" height="32" rx="7"/><path d="M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="#ffffff"/></svg>ClinicFlow <span>PH</span></div>
   <div class="shell-note" id="shellNote"><span class="pill checking">Loading</span><span>Loading your dashboard</span></div>
   <div class="shell-lines" id="shellLines" aria-hidden="true">
     <div class="shell-line w85"></div>
@@ -311,7 +323,7 @@
   </nav>
 
   <header class="top">
-    <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0f766e"/><path d="M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="#ffffff"/></svg>ClinicFlow <span>PH</span></div>
+    <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect class="brand-mark" width="32" height="32" rx="7"/><path d="M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="#ffffff"/></svg>ClinicFlow <span>PH</span></div>
     <div class="head-actions">
       <div class="topnote" id="signedInAs">Signed in</div>
       <form class="logoutform" method="post" action="/api/logout"><button class="logoutbtn" type="submit">Log out</button></form>
@@ -351,7 +363,6 @@
   </section>
 
   <section id="connect">
-    <div class="return-banner" id="returnBanner" role="status"></div>
     <h2>Connect your accounts</h2>
     <p class="sub">
       Every account below stays under your name. You sign in with your own Facebook, Google,
@@ -360,6 +371,7 @@
     <p class="sub">
       Connect all three. Facebook lets the bot answer patients, Google is where bookings are written down, and Telegram is how you hear about each booking right away. Do them in the order shown: Facebook first, then Google, then Telegram.
     </p>
+    <div class="return-banner" id="returnBanner" role="status"></div>
 
     <div class="cards">
       <div class="card" id="card-facebook">
@@ -388,11 +400,11 @@
         <p class="cardbody">Link Telegram so every confirmed booking reaches your phone the moment it happens.</p>
         <p class="safety-line">Safe: you only tap Start in a chat with our alert bot. No password is asked, and you can block the bot anytime to stop alerts.</p>
         <span class="pill checking" data-pill>Checking status</span>
-        <button class="connect" data-connect="telegram">Connect Telegram</button>
         <div class="tgcode" data-tgbox aria-hidden="true">
           <div class="code" data-tgcode></div>
           <p data-tgtext></p>
         </div>
+        <button class="connect" data-connect="telegram">Connect Telegram</button>
         <p class="cardmsg" data-msg aria-live="polite"></p>
       </div>
     </div>
