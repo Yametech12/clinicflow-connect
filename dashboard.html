@@ -139,6 +139,7 @@
     border-top:2px solid var(--rule);padding:20px 22px;font-size:14px;
   }
   section{padding:36px 0 0;scroll-margin-top:76px}
+  section#profile .stepnum{margin-bottom:6px}
   h2{font-family:Georgia,"Times New Roman",serif;font-size:24px;margin-bottom:6px}
   .sub{color:var(--muted);font-size:14px;max-width:640px}
   .sub + .sub{margin-top:8px}
@@ -303,19 +304,19 @@
       <div class="progress-segments">
         <a class="seg" id="prog-profile" href="#profile">
           <div class="seg-track"><div class="seg-fill"></div></div>
-          <span class="seg-label">Profile</span>
+          <span class="seg-label">1 Profile</span>
         </a>
         <a class="seg" id="prog-facebook" href="#connect">
           <div class="seg-track"><div class="seg-fill"></div></div>
-          <span class="seg-label">Facebook</span>
+          <span class="seg-label">2 Facebook</span>
         </a>
         <a class="seg" id="prog-google" href="#connect">
           <div class="seg-track"><div class="seg-fill"></div></div>
-          <span class="seg-label">Google</span>
+          <span class="seg-label">3 Google</span>
         </a>
         <a class="seg" id="prog-telegram" href="#connect">
           <div class="seg-track"><div class="seg-fill"></div></div>
-          <span class="seg-label">Telegram</span>
+          <span class="seg-label">4 Telegram</span>
         </a>
       </div>
       <div class="progress-count" id="progressCount">0 of 4 done</div>
@@ -333,9 +334,10 @@
   <main>
   <h1 class="dash-h1">Your clinic dashboard</h1>
 
-  <div class="welcomebox" id="welcomeBox">Welcome to your ClinicFlow dashboard. Four steps turn your bot on, in order: save your clinic profile, connect Facebook, connect Google, then link Telegram. Start with Step 1 on the Facebook card below once your profile is saved; the bot starts answering as soon as Facebook and Google are both connected.</div>
+  <div class="welcomebox" id="welcomeBox">Welcome to your ClinicFlow dashboard. Four steps turn your bot on: save your clinic profile, connect Facebook, connect Google, then link Telegram. Start with Step 2 on the Facebook card below once your profile is saved; the bot starts answering as soon as Facebook and Google are both connected.</div>
 
   <section id="profile">
+    <div class="stepnum">STEP 1</div>
     <h2>Your clinic profile</h2>
     <p class="sub">These details are what the bot tells patients: your name, address, and hours. You can fill this in now or after you connect.</p>
     <form class="profile" id="profileForm">
@@ -375,7 +377,7 @@
 
     <div class="cards">
       <div class="card" id="card-facebook">
-        <div class="stepnum">STEP 1</div>
+        <div class="stepnum">STEP 2</div>
         <h3>Facebook Page</h3>
         <p class="cardbody">Connect your clinic Page so ClinicFlow can read and reply to patient messages on Messenger for you.</p>
         <p class="safety-line">Safe: you sign in on Facebook's own page. ClinicFlow never sees your password, and you can remove access anytime in Facebook Settings.</p>
@@ -385,7 +387,7 @@
       </div>
 
       <div class="card" id="card-google">
-        <div class="stepnum">STEP 2</div>
+        <div class="stepnum">STEP 3</div>
         <h3>Google</h3>
         <p class="cardbody">Connect Google so each booking is written into a sheet you own and added to your calendar.</p>
         <p class="safety-line">Safe: you sign in on Google's own page. The booking sheet and calendar are created inside your Google account, and you can remove access anytime in your Google Account settings.</p>
@@ -395,7 +397,7 @@
       </div>
 
       <div class="card" id="card-telegram">
-        <div class="stepnum">STEP 3</div>
+        <div class="stepnum">STEP 4</div>
         <h3>Telegram alerts</h3>
         <p class="cardbody">Link Telegram so every confirmed booking reaches your phone the moment it happens.</p>
         <p class="safety-line">Safe: you only tap Start in a chat with our alert bot. No password is asked, and you can block the bot anytime to stop alerts.</p>
@@ -593,7 +595,7 @@
 
     var welcome = document.getElementById('welcomeBox');
     if (welcome) {
-      welcome.style.display = connCount === 3 ? 'none' : '';
+      welcome.style.display = connCount === 3 && profileDone ? 'none' : '';
     }
   }
 

@@ -1281,6 +1281,28 @@ function assertEq(a, b, msg) {
     }
   });
 
+  // 23. GT-139 FL139-01: numbering unification gate. Profile is Step 1,
+  // cards are Steps 2 to 4, welcome points at Step 2.
+  await test('numbering gate FL139-01: STEP 1 in profile, STEP 2/3/4 in cards, welcome Step 2', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'dashboard.html'), 'utf8');
+    const count = (s) => (html.match(new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+    assertEq(count('STEP 1'), 1, 'STEP 1 appears exactly once');
+    const profileSection = html.slice(html.indexOf('<section id="profile">'), html.indexOf('<section id="connect">'));
+    assert(profileSection.includes('<div class="stepnum">STEP 1</div>'), 'STEP 1 sits inside section#profile');
+    const fb = html.slice(html.indexOf('id="card-facebook"'), html.indexOf('id="card-google"'));
+    assert(fb.includes('<div class="stepnum">STEP 2</div>'), 'STEP 2 in #card-facebook');
+    const gg = html.slice(html.indexOf('id="card-google"'), html.indexOf('id="card-telegram"'));
+    assert(gg.includes('<div class="stepnum">STEP 3</div>'), 'STEP 3 in #card-google');
+    const tg = html.slice(html.indexOf('id="card-telegram"'), html.indexOf('<section id="pilot">'));
+    assert(tg.includes('<div class="stepnum">STEP 4</div>'), 'STEP 4 in #card-telegram');
+    assert(html.includes('Start with Step 2 on the Facebook card'), 'welcome contains the Step 2 pointer');
+    assert(html.includes('Four steps turn your bot on: save your clinic profile'), 'welcome order wording per lead AE-2 decision');
+    assert(html.includes('>1 Profile<') && html.includes('>2 Facebook<') && html.includes('>3 Google<') && html.includes('>4 Telegram<'), 'numbered segment labels present');
+    assert(html.includes('connCount === 3 && profileDone'), 'AE-3 welcome hide condition requires profileDone');
+  });
+
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - failed.length}/${results.length} tests passed`);
   if (failed.length) {
