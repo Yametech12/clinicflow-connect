@@ -265,6 +265,42 @@ async function del(key) {
   await runKvCommand(['DEL', String(key)]);
 }
 
+async function scanKeys(prefix) {
+  if (testAdapter) {
+    if (typeof testAdapter.scanKeys === 'function') {
+      return testAdapter.scanKeys(prefix);
+    }
+    return [];
+  }
+
+  const info = getBackendInfo();
+  if (!info.configured) {
+    throw new StoreNotConfiguredError();
+  }
+
+  if (info.backend === 'local_file') {
+    const map = readLocalMap(resolveLocalFile());
+    return Object.keys(map).filter((key) => key.startsWith(prefix));
+  }
+
+  const keys = [];
+  let cursor = '0';
+  for (let page = 0; page < 20; page += 1) {
+    const result = await runKvCommand(['SCAN', cursor, 'MATCH', `${prefix}*`, 'COUNT', '100']);
+    if (!Array.isArray(result) || result.length < 2) {
+      break;
+    }
+    cursor = String(result[0]);
+    if (Array.isArray(result[1])) {
+      keys.push(...result[1].map(String));
+    }
+    if (cursor === '0') {
+      break;
+    }
+  }
+  return keys;
+}
+
 function _setAdapterForTests(adapter) {
   testAdapter = adapter || null;
 }
@@ -277,5 +313,6 @@ module.exports = {
   put,
   putIfAbsent,
   del,
+  scanKeys,
   _setAdapterForTests,
 };

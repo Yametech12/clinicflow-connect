@@ -50,6 +50,9 @@ function makeAdapter() {
     async del(key) {
       map.delete(key);
     },
+    async scanKeys(prefix) {
+      return [...map.keys()].filter((k) => k.startsWith(prefix) && alive(map.get(k)));
+    },
   };
 }
 
@@ -77,6 +80,7 @@ const firebaseBridge = require('../api/auth/firebase');
 // --- fetch mock ---
 const fetchLog = [];
 let geminiBehavior = { mode: 'ok', payload: null };
+let slowGeminiState = { completed: false };
 let googleWriteBehavior = { calendar: 'ok', leads: 'ok', logs: 'ok' };
 let googleTokenBehavior = { mode: 'ok' };
 let userinfoBehavior = { sub: 'sub_owner_1', email: 'clinic.owner@example.com' };
@@ -102,6 +106,11 @@ global.fetch = async (url, options = {}) => {
   if (u.includes('generativelanguage.googleapis.com')) {
     if (geminiBehavior.mode === 'http500') {
       return jsonResponse(500, { error: { message: 'mock gemini outage' } });
+    }
+    if (geminiBehavior.mode === 'slow') {
+      // GT-143: deliberately slow pipeline step for the fast-ack test.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      slowGeminiState.completed = true;
     }
     const payload = geminiBehavior.payload || {
       reply: 'Hi po! How can we help with your smile today?',
@@ -312,6 +321,7 @@ const results = [];
 async function test(name, fn) {
   fetchLog.length = 0;
   geminiBehavior = { mode: 'ok', payload: null };
+  slowGeminiState = { completed: false };
   googleWriteBehavior = { calendar: 'ok', leads: 'ok', logs: 'ok' };
   googleTokenBehavior = { mode: 'ok' };
   userinfoBehavior = { sub: 'sub_owner_1', email: 'clinic.owner@example.com' };
@@ -2094,6 +2104,282 @@ function assertEq(a, b, msg) {
     const startFn = html.slice(startFnAt, startFnAt + 1200);
     assert(startFn.includes('armFbNavWatchdog'), 'start path arms the navigation watchdog');
     assert(/withTimeout\(loadFirebaseAuth\(\)/.test(startFn), 'start path bounds the SDK load with withTimeout');
+  });
+
+  // GT-143 (a). Fast ack: the 200 response is emitted BEFORE a
+  // deliberately slow pipeline step (Gemini, 400ms) completes, and the
+  // pipeline still finishes afterwards in the same invocation.
+  await test('GT-143 fast ack: ack sent before slow Gemini step completes, reply still sent', async () => {
+    await seedClinic();
+    geminiBehavior = { mode: 'slow', payload: null };
+    const payload = pageEvent({ pageId: 'page_1001', senderId: 'psid_fa1', mid: 'mid_fa1', text: 'Pila ang cleaning?' });
+    const raw = Buffer.from(JSON.stringify(payload), 'utf8');
+    const req = makeReq({
+      method: 'POST',
+      headers: { 'x-hub-signature-256': sign(raw, process.env.META_APP_SECRET) },
+      rawBody: raw,
+    });
+    const res = makeRes();
+    let ackAtSend = null;
+    const origSend = res.send.bind(res);
+    res.send = (body) => {
+      ackAtSend = { body, geminiDoneAtAck: slowGeminiState.completed };
+      return origSend(body);
+    };
+    await webhookHandler(req, res);
+    assert(ackAtSend, 'ack was sent');
+    assertEq(ackAtSend.body, 'EVENT_RECEIVED', 'ack body');
+    assertEq(ackAtSend.geminiDoneAtAck, false, 'ack emitted before the slow Gemini step completed');
+    assertEq(slowGeminiState.completed, true, 'pipeline ran to completion after the ack');
+    assertEq(graphReplies().length, 1, 'reply sent after ack');
+    const record = await store.get('evt:page_1001:mid_fa1');
+    assert(record, 'durable event record exists');
+    assertEq(record.status, 'done', 'event record marked done');
+    assertEq(record.outcome, 'replied', 'event record outcome recorded');
+  });
+
+  // GT-143 (b). Duplicate delivery of the same event produces exactly
+  // one reply, and the second delivery is dropped at intake because
+  // the durable record is already done.
+  await test('GT-143 fast ack: duplicate delivery -> exactly one reply, dropped at intake', async () => {
+    const ev = pageEvent({ pageId: 'page_1001', senderId: 'psid_fa2', mid: 'mid_fa_dup', text: 'Pila ang pasta?' });
+    await postWebhook(ev);
+    await postWebhook(ev);
+    await postWebhook(ev);
+    assertEq(graphReplies().length, 1, 'exactly one reply across three deliveries');
+    const record = await store.get('evt:page_1001:mid_fa_dup');
+    assert(record && record.status === 'done', 'record done after duplicates');
+    const intake = await pipeline.recordEventIntake(store, {
+      pageId: 'page_1001',
+      senderId: 'psid_fa2',
+      messageId: 'mid_fa_dup',
+      userText: 'Pila ang pasta?',
+    });
+    assertEq(intake.shouldProcess, false, 'intake refuses a done event');
+    assertEq(intake.reason, 'duplicate_done', 'intake reason is duplicate_done');
+  });
+
+  // GT-143 (c). FAQ cache: the second message for the same clinic is
+  // served without a second Sheets FAQ fetch, and after the cache
+  // entry expires the next message fetches again.
+  await test('GT-143 FAQ cache: second read served from cache, expiry refetches', async () => {
+    const { clinicId } = await seedClinic({ withGoogle: true });
+    global.__faqRows = [['Oral Prophylaxis (Teeth Cleaning)', '800', '60', '']];
+    const faqFetches = () =>
+      fetchLog.filter((c) => c.url.includes('sheets.googleapis.com') && c.url.includes('FAQ_Prices')).length;
+    await postWebhook(pageEvent({ pageId: 'page_1001', senderId: 'psid_fa3', mid: 'mid_faq1', text: 'Pila ang cleaning?' }));
+    assertEq(faqFetches(), 1, 'first message fetched the FAQ sheet');
+    await postWebhook(pageEvent({ pageId: 'page_1001', senderId: 'psid_fa3', mid: 'mid_faq2', text: 'Pila gihapon ang cleaning?' }));
+    assertEq(faqFetches(), 1, 'second message served from the FAQ cache, no second fetch');
+    const cacheKeys = [...adapter.map.keys()].filter((k) => k.startsWith(`faq_cache:${clinicId}:`));
+    assertEq(cacheKeys.length, 1, 'one per-clinic FAQ cache entry');
+    // Expire the cache entry the way the store TTL would, then confirm
+    // the next message goes back to the Sheet.
+    adapter.map.get(cacheKeys[0]).exp = Date.now() - 1000;
+    await postWebhook(pageEvent({ pageId: 'page_1001', senderId: 'psid_fa3', mid: 'mid_faq3', text: 'Ug pila ang cleaning karon?' }));
+    assertEq(faqFetches(), 2, 'expired cache refetches the FAQ sheet');
+    assertEq(pipeline.FAQ_CACHE_TTL_SECONDS, 180, 'FAQ cache window is 3 minutes');
+  });
+
+  // GT-143 (d). A pipeline failure after the ack is recorded on the
+  // durable event record (status failed, with the error) and in the
+  // dead-letter store, never silently swallowed; a Meta retry of the
+  // same event re-drives it.
+  await test('GT-143 fast ack: post-ack pipeline failure recorded failed + visible, retry re-drives', async () => {
+    geminiBehavior = { mode: 'http500' };
+    const ev = pageEvent({ pageId: 'page_1001', senderId: 'psid_fa4', mid: 'mid_fa_fail', text: 'Pila ang cleaning?' });
+    const res1 = await postWebhook(ev);
+    assertEq(res1.statusCode, 200, 'ack still returned on pipeline failure');
+    assertEq(graphReplies().length, 0, 'no reply while Gemini is down');
+    const record = await store.get('evt:page_1001:mid_fa_fail');
+    assert(record, 'event record exists after failure');
+    assertEq(record.status, 'failed', 'event record marked failed');
+    assert(record.error && record.error.length > 0, 'failure detail recorded on the event record');
+    // Failure visibility: the pipeline records the failure either as an
+    // ERROR row in the clinic's System_Logs sheet (when Google is
+    // linked) or as a dead-letter store record. One of the two must
+    // exist; a silently swallowed failure would show neither.
+    const deadKeys = [...adapter.map.keys()].filter((k) => k.startsWith('dead:page_1001:mid_fa_fail'));
+    const sheetErrorLogged = fetchLog.some(
+      (c) => c.url.includes('sheets.googleapis.com') && c.url.includes('System_Logs')
+    );
+    assert(
+      deadKeys.length >= 1 || sheetErrorLogged,
+      'failure surfaced in dead-letter store or System_Logs sheet'
+    );
+    geminiBehavior = { mode: 'ok', payload: null };
+    const res2 = await postWebhook(ev);
+    assertEq(res2.statusCode, 200, 'retry acked');
+    assertEq(graphReplies().length, 1, 'retry of the failed event produced the reply');
+    const after = await store.get('evt:page_1001:mid_fa_fail');
+    assertEq(after.status, 'done', 'record done after successful retry');
+    assert(Number(after.attempts) >= 2, 'retry counted as a second attempt');
+  });
+
+  // GT-143 (e). Stale-event drain: an event recorded by an invocation
+  // that died before processing (status received, past the stale
+  // window) is discovered by key scan and re-driven by the next
+  // webhook invocation.
+  await test('GT-143 fast ack: stale recorded event drained by the next invocation', async () => {
+    await seedClinic();
+    const staleKey = 'evt:page_1001:mid_stale1';
+    await store.put(
+      staleKey,
+      {
+        pageId: 'page_1001',
+        senderId: 'psid_stale',
+        messageId: 'mid_stale1',
+        userText: 'Pila ang cleaning?',
+        status: 'received',
+        receivedAt: new Date(Date.now() - (pipeline.EVENT_STALE_MS + 60000)).toISOString(),
+        attempts: 1,
+      },
+      { ttlSeconds: 3600 }
+    );
+    // A fresh, unrelated message arrives; its invocation drains the stale one.
+    await postWebhook(pageEvent({ pageId: 'page_1001', senderId: 'psid_fa5', mid: 'mid_fresh1', text: 'Hello po' }));
+    const replies = graphReplies();
+    assertEq(replies.length, 2, 'fresh message and drained stale message both replied');
+    const record = await store.get(staleKey);
+    assertEq(record.status, 'done', 'stale record marked done after drain');
+  });
+
+  // GT-143 (f). Re-drive safety, direction 1: a previous attempt sent
+  // the reply and died before settling the record (reply_sent marker
+  // present, record still received and stale). The drain must settle
+  // the record WITHOUT sending the reply a second time.
+  await test('GT-143 fast ack: drain never resends when the reply_sent marker exists', async () => {
+    await seedClinic();
+    const key = 'evt:page_1001:mid_sent1';
+    await store.put(
+      key,
+      {
+        pageId: 'page_1001',
+        senderId: 'psid_sent',
+        messageId: 'mid_sent1',
+        userText: 'Pila ang cleaning?',
+        status: 'received',
+        receivedAt: new Date(Date.now() - (pipeline.EVENT_STALE_MS + 60000)).toISOString(),
+        attempts: 1,
+      },
+      { ttlSeconds: 3600 }
+    );
+    await store.put(`reply_sent:${key}`, { at: new Date().toISOString() }, { ttlSeconds: 3600 });
+    await postWebhook(pageEvent({ pageId: 'page_1001', senderId: 'psid_fa6', mid: 'mid_fresh2', text: 'Hello po' }));
+    assertEq(graphReplies().length, 1, 'only the fresh message got a reply, no resend for the marked event');
+    const record = await store.get(key);
+    assertEq(record.status, 'done', 'marked event settled as done by the drain');
+    assertEq(record.outcome, 'already_replied', 'outcome shows the reply had already gone out');
+  });
+
+  // GT-143 (g). Re-drive safety, direction 2: a previous attempt
+  // claimed the pipeline dedup key and died BEFORE sending (no
+  // reply_sent marker). The drain must clear the stale dedup claim
+  // and actually deliver the reply, exactly once.
+  await test('GT-143 fast ack: drain clears a dead attempt dedup claim and delivers the reply', async () => {
+    await seedClinic();
+    const key = 'evt:page_1001:mid_dead1';
+    await store.put(
+      key,
+      {
+        pageId: 'page_1001',
+        senderId: 'psid_dead',
+        messageId: 'mid_dead1',
+        userText: 'Pila ang cleaning?',
+        status: 'received',
+        receivedAt: new Date(Date.now() - (pipeline.EVENT_STALE_MS + 60000)).toISOString(),
+        attempts: 1,
+      },
+      { ttlSeconds: 3600 }
+    );
+    await store.put('msg_dedup:page_1001:mid_dead1', '1', { ttlSeconds: 3600 });
+    await postWebhook(pageEvent({ pageId: 'page_1001', senderId: 'psid_fa7', mid: 'mid_fresh3', text: 'Hello po' }));
+    assertEq(graphReplies().length, 2, 'fresh message replied and the orphaned message finally replied');
+    const record = await store.get(key);
+    assertEq(record.status, 'done', 'orphaned record done after drain');
+    assertEq(record.outcome, 'replied', 'orphaned message was processed, not suppressed as a duplicate');
+    const marker = await store.get(`reply_sent:${key}`);
+    assert(marker, 'reply_sent marker written by the drained run');
+  });
+
+  // GT-143 (h). Concurrent re-drives of the same record are
+  // serialized by the atomic evt_claim: exactly one runs the
+  // pipeline, the other stands down as claim_held, and the patient
+  // gets exactly one reply even though a stale dedup claim from the
+  // dead attempt is in play.
+  await test('GT-143 fast ack: concurrent re-drives serialized by the event claim, one reply', async () => {
+    await seedClinic();
+    const key = 'evt:page_1001:mid_race1';
+    await store.put(
+      key,
+      {
+        pageId: 'page_1001',
+        senderId: 'psid_race',
+        messageId: 'mid_race1',
+        userText: 'Pila ang cleaning?',
+        status: 'received',
+        receivedAt: new Date(Date.now() - (pipeline.EVENT_STALE_MS + 60000)).toISOString(),
+        attempts: 1,
+      },
+      { ttlSeconds: 3600 }
+    );
+    await store.put('msg_dedup:page_1001:mid_race1', '1', { ttlSeconds: 3600 });
+    const job = { pageId: 'page_1001', senderId: 'psid_race', messageId: 'mid_race1', userText: 'Pila ang cleaning?' };
+    const [r1, r2] = await Promise.all([
+      pipeline.processRecordedEvent(store, key, job, { redrive: true }),
+      pipeline.processRecordedEvent(store, key, job, { redrive: true }),
+    ]);
+    const statuses = [r1.status, r2.status].sort();
+    assertEq(statuses[0], 'claim_held', 'one re-drive stood down on the claim');
+    assertEq(statuses[1], 'replied', 'one re-drive ran the pipeline');
+    assertEq(graphReplies().length, 1, 'exactly one reply across concurrent re-drives');
+    const record = await store.get(key);
+    assertEq(record.status, 'done', 'record settled done after the race');
+    const claim = await store.get(`evt_claim:${key}`);
+    assertEq(claim, null, 'event claim released after the re-drive');
+  });
+
+  // GT-143 (i). The drain attempt cap actually advances: a failed
+  // record is retried by the drain only until attempts reach
+  // EVENT_MAX_ATTEMPTS, then never again (no 24h retry loop, no
+  // repeated Gemini calls or booking side effects).
+  await test('GT-143 fast ack: drain retries of a failed record stop at the attempt cap', async () => {
+    await seedClinic();
+    geminiBehavior = { mode: 'http500' };
+    const key = 'evt:page_1001:mid_cap1';
+    const oldIso = new Date(Date.now() - (pipeline.EVENT_STALE_MS + 60000)).toISOString();
+    await store.put(
+      key,
+      {
+        pageId: 'page_1001',
+        senderId: 'psid_cap',
+        messageId: 'mid_cap1',
+        userText: 'Pila ang cleaning?',
+        status: 'failed',
+        receivedAt: oldIso,
+        failedAt: oldIso,
+        attempts: 1,
+        error: 'first failure',
+      },
+      { ttlSeconds: 3600 }
+    );
+    const geminiCalls = () =>
+      fetchLog.filter((c) => c.url.includes('generativelanguage.googleapis.com')).length;
+    for (let i = 0; i < 4; i += 1) {
+      // Re-age the failure the way the passage of the stale window
+      // would, then let the drain run.
+      const rec = await store.get(key);
+      if (rec && rec.status === 'failed') {
+        rec.failedAt = oldIso;
+        await store.put(key, rec, { ttlSeconds: 3600 });
+      }
+      await pipeline.drainStaleEvents(store);
+    }
+    const record = await store.get(key);
+    assertEq(record.attempts, pipeline.EVENT_MAX_ATTEMPTS, 'attempts stopped at the cap');
+    assertEq(record.status, 'failed', 'record remains failed and visible after the cap');
+    assertEq(geminiCalls(), pipeline.EVENT_MAX_ATTEMPTS - 1, 'drain ran the pipeline only for the retries under the cap');
+    assertEq(graphReplies().length, 0, 'no replies while Gemini is down');
   });
 
   const failed = results.filter((r) => r[0] === 'FAIL');

@@ -19,6 +19,32 @@ const HISTORY_TTL_SECONDS = 1800; // 30 mins
 const MSG_DEDUP_TTL_SECONDS = 300; // 5 mins
 const BOOKED_GUARD_TTL_SECONDS = 600; // 10 mins
 const DEAD_LETTER_TTL_SECONDS = 24 * 60 * 60; // 24 hours
+// GT-143 fast ack: FAQ Sheet reads are cached per clinic in the shared
+// store so repeat questions inside the window skip the Sheets fetch.
+// FAQ answers change rarely (clinic edits the Sheet by hand), so a
+// 3-minute staleness window is safe. Price rows come from this same FAQ
+// Sheet read today, so the cache covers them with the same window; the
+// booking writes (Calendar, Leads) are never cached.
+const FAQ_CACHE_TTL_SECONDS = 180; // 3 minutes
+// GT-143 fast ack: every verified Messenger event is durably recorded
+// BEFORE the webhook acks, so a dropped or killed invocation can never
+// lose a patient message. Records keep the full payload for manual
+// replay and live for 24 hours.
+const EVENT_RECORD_TTL_SECONDS = 24 * 60 * 60; // 24 hours
+// An event still marked received after 6 minutes belongs to an
+// invocation that died mid-flight: 6 minutes is past the longest
+// function duration Vercel allows (300s), so the original attempt is
+// guaranteed finished before anything re-drives its record. Reply
+// safety on a re-drive does NOT come from this window; it comes from
+// the reply_sent marker and the dedup reset in processRecordedEvent.
+const EVENT_STALE_MS = 6 * 60 * 1000;
+const EVENT_DRAIN_MAX = 5;
+const EVENT_MAX_ATTEMPTS = 3;
+// Re-drive claim lease: one re-drive works on a record at a time. The
+// lease outlives the longest possible processing run (Vercel caps
+// function duration at 300s), so a claim can never expire under a
+// live holder; a killed holder's claim frees itself when it lapses.
+const EVENT_CLAIM_TTL_SECONDS = 360;
 const TG_MAX_FAILED_ATTEMPTS = 5;
 const TG_FAIL_WINDOW_SECONDS = 900; // 15 mins
 
@@ -306,7 +332,52 @@ async function writeDeadLetterRecord(store, { pageId, senderId, messageId, userT
   }
 }
 
-async function processMessengerEvent({ pageId, senderId, messageId, userText, store }) {
+// GT-143: store-backed FAQ cache, keyed per clinic + spreadsheet. A hit
+// returns the parsed { items, formattedText, truncated } shape without a
+// Sheets fetch. Only successful loads are cached; a failed load throws
+// through to the caller's existing fallback and is never stored.
+async function loadFaqPricesCached(store, clinicId, googleAccessToken, spreadsheetId) {
+  const cacheKey = `faq_cache:${clinicId}:${spreadsheetId}`;
+  if (store && store.isConfigured()) {
+    try {
+      const cached = await store.get(cacheKey);
+      if (
+        cached &&
+        Array.isArray(cached.items) &&
+        typeof cached.formattedText === 'string'
+      ) {
+        return {
+          items: cached.items,
+          formattedText: cached.formattedText,
+          truncated: Boolean(cached.truncated),
+        };
+      }
+    } catch (cacheErr) {
+      logServerError(`faq_cache_read:${clinicId}`, cacheErr);
+    }
+  }
+
+  const fresh = await loadFaqPrices(googleAccessToken, spreadsheetId);
+
+  if (store && store.isConfigured()) {
+    try {
+      await store.put(
+        cacheKey,
+        {
+          items: fresh.items,
+          formattedText: fresh.formattedText,
+          truncated: Boolean(fresh.truncated),
+        },
+        { ttlSeconds: FAQ_CACHE_TTL_SECONDS }
+      );
+    } catch (cacheErr) {
+      logServerError(`faq_cache_write:${clinicId}`, cacheErr);
+    }
+  }
+  return fresh;
+}
+
+async function processMessengerEvent({ pageId, senderId, messageId, userText, store, eventKey }) {
   if (!store || !store.isConfigured()) {
     console.warn('[clinicflow] Skipping Messenger event: storage is not configured.');
     return { status: 'skipped', reason: 'storage_unconfigured' };
@@ -353,7 +424,7 @@ async function processMessengerEvent({ pageId, senderId, messageId, userText, st
     };
     if (googleAccessToken && spreadsheetId) {
       try {
-        faqData = await loadFaqPrices(googleAccessToken, spreadsheetId);
+        faqData = await loadFaqPricesCached(store, clinicId, googleAccessToken, spreadsheetId);
       } catch (err) {
         logServerError(`faq_load:${clinicId}`, err);
       }
@@ -499,6 +570,22 @@ async function processMessengerEvent({ pageId, senderId, messageId, userText, st
     // Send the Messenger reply BEFORE updating history / appending System_Logs.
     await sendMessengerReply(clinic.facebook.pageAccessToken, senderId, outgoingReply);
 
+    // GT-143: durably mark that this event's reply went out, before
+    // any other post-send work. If this invocation is killed at any
+    // later point, a re-drive of the event record sees the marker and
+    // never sends the reply a second time.
+    if (eventKey) {
+      try {
+        await store.put(
+          `reply_sent:${eventKey}`,
+          { at: new Date().toISOString() },
+          { ttlSeconds: EVENT_RECORD_TTL_SECONDS }
+        );
+      } catch (markErr) {
+        logServerError('reply_sent_mark', markErr);
+      }
+    }
+
     if (bookingConfirmed) {
       await store.del(histKey);
     } else {
@@ -577,6 +664,292 @@ async function processMessengerEvent({ pageId, senderId, messageId, userText, st
 
     throw err;
   }
+}
+
+// --- GT-143 fast ack: durable webhook event records -------------------
+// The webhook records each verified Messenger event in the store BEFORE
+// sending its 200 ack, then processes it in the same invocation after
+// the response has been flushed to Meta. The record is the safety net:
+// status transitions (received -> done / failed) make every delivery
+// auditable, duplicates of a finished event are dropped at intake, a
+// failed event can be re-driven by a repeat delivery, and an event
+// orphaned by a killed invocation is re-driven by drainStaleEvents on
+// a later invocation. Discovery is by key scan (store.scanKeys), never
+// a shared index key, so concurrent invocations cannot corrupt it.
+// Double-send safety on re-drives comes from processRecordedEvent: the
+// pipeline writes a reply_sent marker the moment a reply goes out, and
+// a re-drive checks that marker before doing anything.
+
+function buildEventKey({ pageId, senderId, messageId, userText }) {
+  if (messageId) {
+    return `evt:${pageId}:${messageId}`;
+  }
+  // Events without a Meta message id cannot be deduped (same as the
+  // pipeline's msg_dedup behaviour today), so each delivery gets a
+  // unique record keyed by a hash of its content plus arrival time.
+  const crypto = require('crypto');
+  const hash = crypto
+    .createHash('sha256')
+    .update(`${pageId}|${senderId}|${userText}|${Date.now()}|${Math.random()}`)
+    .digest('hex')
+    .slice(0, 24);
+  return `evt:${pageId}:noid_${hash}`;
+}
+
+// Records the event and decides whether THIS invocation should process
+// it. Returns { key, shouldProcess, reason }. A duplicate of an event
+// that already finished returns shouldProcess false. A duplicate of a
+// failed event, or of an event orphaned past the stale window, is
+// re-claimed so the repeat delivery actually re-runs the pipeline
+// (through the re-drive protocol in processRecordedEvent).
+async function recordEventIntake(store, job) {
+  const key = buildEventKey(job);
+  const record = {
+    pageId: job.pageId,
+    senderId: job.senderId,
+    messageId: job.messageId || null,
+    userText: String(job.userText || '').slice(0, 1000),
+    status: 'received',
+    receivedAt: new Date().toISOString(),
+    attempts: 1,
+  };
+
+  const fresh = await store.putIfAbsent(key, record, {
+    ttlSeconds: EVENT_RECORD_TTL_SECONDS,
+  });
+  if (fresh) {
+    return { key, shouldProcess: true, reason: 'new' };
+  }
+
+  const existing = await store.get(key);
+  if (!existing) {
+    // Record expired between the two reads; take the claim.
+    await store.put(key, record, { ttlSeconds: EVENT_RECORD_TTL_SECONDS });
+    return { key, shouldProcess: true, reason: 'record_expired' };
+  }
+
+  if (existing.status === 'done') {
+    return { key, shouldProcess: false, reason: 'duplicate_done' };
+  }
+
+  const ageMs = Date.now() - new Date(existing.receivedAt || 0).getTime();
+  if (existing.status === 'failed' || ageMs > EVENT_STALE_MS) {
+    // Reopen the record for the re-drive. The attempt count is bumped
+    // by processRecordedEvent when the re-drive actually runs, so
+    // every re-drive path (repeat delivery or drain) counts the same.
+    const reclaim = {
+      ...existing,
+      status: 'received',
+      receivedAt: new Date().toISOString(),
+    };
+    await store.put(key, reclaim, { ttlSeconds: EVENT_RECORD_TTL_SECONDS });
+    return {
+      key,
+      shouldProcess: true,
+      reason: existing.status === 'failed' ? 'retry_failed' : 'reclaim_stale',
+    };
+  }
+
+  return { key, shouldProcess: false, reason: 'in_flight' };
+}
+
+async function markEventProcessed(store, key, result) {
+  try {
+    const existing = await store.get(key);
+    if (!existing) return;
+    await store.put(
+      key,
+      {
+        ...existing,
+        status: 'done',
+        processedAt: new Date().toISOString(),
+        outcome: result && result.status ? String(result.status) : 'unknown',
+      },
+      { ttlSeconds: EVENT_RECORD_TTL_SECONDS }
+    );
+  } catch (err) {
+    logServerError('event_mark_done', err);
+  }
+}
+
+async function markEventFailed(store, key, errorMessage) {
+  try {
+    const existing = await store.get(key);
+    if (!existing) return;
+    await store.put(
+      key,
+      {
+        ...existing,
+        status: 'failed',
+        failedAt: new Date().toISOString(),
+        error: String(errorMessage || 'Unknown error').slice(0, 500),
+      },
+      { ttlSeconds: EVENT_RECORD_TTL_SECONDS }
+    );
+  } catch (err) {
+    logServerError('event_mark_failed', err);
+  }
+}
+
+// Runs the pipeline for one recorded event and settles its record.
+// First attempts (redrive false) go straight through. Re-drives
+// (redrive true: a repeat delivery reclaiming a failed or stale
+// record, or the drain) are serialized by an atomic claim
+// (evt_claim:<key>, putIfAbsent) so two concurrent re-drives of the
+// same record can never interleave, then follow the safety protocol:
+//   1. If the reply_sent marker exists, a previous attempt DID send
+//      the reply (and died before settling the record). Mark done as
+//      already_replied and never send again.
+//   2. Otherwise no reply ever went out, but a dead attempt may have
+//      left its msg_dedup claim behind; clear it so this run can
+//      actually process instead of being suppressed as a duplicate.
+//      The claim guarantees no other re-drive is mid-pipeline while
+//      this runs, so the clear cannot strip a live claim.
+//   3. The attempt count is bumped here, the one place every re-drive
+//      passes through, so the drain's attempt cap always advances.
+// Re-drives only ever happen for records whose original invocation is
+// finished (failed outright, or older than the stale window, which is
+// past the maximum function duration), so none of this can race a
+// live first attempt either.
+async function processRecordedEvent(store, key, job, { redrive = false, processFn } = {}) {
+  const run = processFn || processMessengerEvent;
+
+  async function runAndSettle() {
+    try {
+      const result = await run({ ...job, store, eventKey: key });
+      await markEventProcessed(store, key, result);
+      return result;
+    } catch (err) {
+      const ref = logServerError('process_recorded_event', err);
+      await markEventFailed(store, key, `[${ref}] ${err.message}`);
+      return { status: 'error', ref };
+    }
+  }
+
+  if (!redrive) {
+    return runAndSettle();
+  }
+
+  let claimed = false;
+  try {
+    claimed = await store.putIfAbsent(
+      `evt_claim:${key}`,
+      { at: new Date().toISOString() },
+      { ttlSeconds: EVENT_CLAIM_TTL_SECONDS }
+    );
+  } catch (err) {
+    logServerError('event_claim', err);
+  }
+  if (!claimed) {
+    // Another re-drive already holds this record (or the claim write
+    // failed, in which case standing down is the safe side). The
+    // record is left exactly as it was for a later attempt.
+    return { status: 'claim_held' };
+  }
+
+  try {
+    let alreadySent = null;
+    try {
+      alreadySent = await store.get(`reply_sent:${key}`);
+    } catch (err) {
+      logServerError('reply_sent_check', err);
+    }
+    if (alreadySent) {
+      await markEventProcessed(store, key, { status: 'already_replied' });
+      return { status: 'already_replied' };
+    }
+
+    try {
+      const existing = await store.get(key);
+      if (existing) {
+        await store.put(
+          key,
+          {
+            ...existing,
+            status: 'received',
+            receivedAt: new Date().toISOString(),
+            attempts: (Number(existing.attempts) || 1) + 1,
+          },
+          { ttlSeconds: EVENT_RECORD_TTL_SECONDS }
+        );
+      }
+    } catch (err) {
+      logServerError('event_attempt_bump', err);
+    }
+
+    if (job.messageId) {
+      try {
+        await store.del(`msg_dedup:${job.pageId}:${job.messageId}`);
+      } catch (err) {
+        logServerError('event_dedup_reset', err);
+      }
+    }
+
+    return await runAndSettle();
+  } finally {
+    try {
+      await store.del(`evt_claim:${key}`);
+    } catch (err) {
+      // A stranded claim expires on its own TTL.
+    }
+  }
+}
+
+// Opportunistic sweeper, run at the end of a webhook invocation:
+// discovers recorded events by key scan and re-drives the ones whose
+// original invocation never settled them: still received past the
+// stale window (killed mid-flight), or failed, past the same window,
+// with attempts left. Bounded per invocation. Records themselves stay
+// in the store for 24h either way, so anything the sweeper cannot
+// settle remains replayable by hand from its stored payload.
+async function drainStaleEvents(store, { processFn } = {}) {
+  if (!store || !store.isConfigured() || typeof store.scanKeys !== 'function') {
+    return { drained: 0, scanned: 0 };
+  }
+  let keys = [];
+  try {
+    keys = await store.scanKeys('evt:');
+  } catch (err) {
+    logServerError('event_scan', err);
+    return { drained: 0, scanned: 0 };
+  }
+
+  let drained = 0;
+  for (const key of keys) {
+    if (drained >= EVENT_DRAIN_MAX) break;
+    let record = null;
+    try {
+      record = await store.get(key);
+    } catch (err) {
+      continue;
+    }
+    if (!record) continue;
+
+    const receivedAgeMs = Date.now() - new Date(record.receivedAt || 0).getTime();
+    const failedAgeMs = record.failedAt
+      ? Date.now() - new Date(record.failedAt).getTime()
+      : 0;
+    const orphaned = record.status === 'received' && receivedAgeMs > EVENT_STALE_MS;
+    const retryable =
+      record.status === 'failed' &&
+      failedAgeMs > EVENT_STALE_MS &&
+      (Number(record.attempts) || 1) < EVENT_MAX_ATTEMPTS;
+    if (!orphaned && !retryable) continue;
+
+    await processRecordedEvent(
+      store,
+      key,
+      {
+        pageId: record.pageId,
+        senderId: record.senderId,
+        messageId: record.messageId || '',
+        userText: record.userText,
+      },
+      { redrive: true, processFn }
+    );
+    drained += 1;
+  }
+  return { drained, scanned: keys.length };
 }
 
 function extractTelegramLinkingCode(text) {
@@ -726,4 +1099,16 @@ module.exports = {
   processMessengerEvent,
   extractTelegramLinkingCode,
   handleTelegramUpdate,
+  loadFaqPricesCached,
+  buildEventKey,
+  recordEventIntake,
+  markEventProcessed,
+  markEventFailed,
+  processRecordedEvent,
+  drainStaleEvents,
+  FAQ_CACHE_TTL_SECONDS,
+  EVENT_RECORD_TTL_SECONDS,
+  EVENT_STALE_MS,
+  EVENT_MAX_ATTEMPTS,
+  EVENT_CLAIM_TTL_SECONDS,
 };

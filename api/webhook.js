@@ -6,12 +6,21 @@
 //   - Parses JSON manually; unparseable signed/non-Meta payloads get a logged
 //     200 (ignored) instead of a crash or 400 retry storm.
 //   - Meta Messenger events (object === 'page'): runs the AI FAQ + booking pipeline.
+//     GT-143: events are durably recorded in the store and the 200 ack is
+//     sent BEFORE the pipeline runs (fast ack); processing continues
+//     post-response in the same invocation, with stale-event draining.
 //   - Telegram Bot updates (update_id / message.chat): verifies optional
 //     TELEGRAM_WEBHOOK_SECRET and handles /start linking codes.
 const crypto = require('crypto');
 const store = require('./_store');
 const { logServerError, timingSafeStringEqual } = require('./_session');
-const { processMessengerEvent, handleTelegramUpdate } = require('./_pipeline');
+const {
+  processMessengerEvent,
+  handleTelegramUpdate,
+  recordEventIntake,
+  processRecordedEvent,
+  drainStaleEvents,
+} = require('./_pipeline');
 
 // Pro max: Meta and Telegram payloads are small (a few KB). A body over
 // 1 MB cannot be a real event, so refuse it instead of buffering it
@@ -220,17 +229,72 @@ const handler = async (req, res) => {
         }
       }
 
-      for (let i = 0; i < jobs.length; i += MAX_CONCURRENT_EVENTS) {
+      // GT-143 fast ack: record every verified event durably BEFORE
+      // acking, then send the 200 immediately and run the pipeline
+      // after the response inside this same invocation. Meta's
+      // delivery timeout now only has to cover HMAC verification plus
+      // one store write per event, not the Sheets + Gemini + Calendar
+      // pipeline. The durable record (plus the pipeline's msg_dedup
+      // guard and dead-letter writes) means a dropped, retried, or
+      // killed delivery can neither lose a patient message nor
+      // double-send a reply.
+      const claimed = [];
+      for (const job of jobs) {
+        if (!store.isConfigured()) {
+          // No durable record is possible; keep the pre-GT-143
+          // behaviour (the pipeline itself reports the skip).
+          claimed.push({ key: null, job, redrive: false });
+          continue;
+        }
+        try {
+          const intake = await recordEventIntake(store, job);
+          if (intake.shouldProcess) {
+            claimed.push({
+              key: intake.key,
+              job,
+              redrive: intake.reason === 'retry_failed' || intake.reason === 'reclaim_stale',
+            });
+          } else {
+            console.log(
+              `[clinicflow] webhook event skipped at intake (${intake.reason}): ${intake.key}`
+            );
+          }
+        } catch (intakeErr) {
+          // Recording failed transiently: process anyway rather than
+          // dropping a verified patient message. The pipeline dedup
+          // still guards against a double reply.
+          logServerError('webhook_event_intake', intakeErr);
+          claimed.push({ key: null, job, redrive: false });
+        }
+      }
+
+      // Fast ack: the response goes out now; everything below runs
+      // post-response in this invocation.
+      res.status(200).send('EVENT_RECEIVED');
+
+      for (let i = 0; i < claimed.length; i += MAX_CONCURRENT_EVENTS) {
         await Promise.all(
-          jobs.slice(i, i + MAX_CONCURRENT_EVENTS).map((job) =>
-            processMessengerEvent(job).catch((err) => {
-              const ref = logServerError('webhook_event', err);
-              return { status: 'error', ref };
-            })
-          )
+          claimed.slice(i, i + MAX_CONCURRENT_EVENTS).map(async ({ key, job, redrive }) => {
+            if (!key) {
+              return processMessengerEvent(job).catch((err) => {
+                const ref = logServerError('webhook_event', err);
+                return { status: 'error', ref };
+              });
+            }
+            return processRecordedEvent(store, key, job, { redrive });
+          })
         );
       }
-      return res.status(200).send('EVENT_RECEIVED');
+
+      // Opportunistic sweep: re-drive any event an earlier invocation
+      // recorded but never finished (for example it was killed at the
+      // platform duration limit mid-pipeline).
+      try {
+        await drainStaleEvents(store);
+      } catch (drainErr) {
+        logServerError('webhook_event_drain', drainErr);
+      }
+      return;
     }
 
     console.log(

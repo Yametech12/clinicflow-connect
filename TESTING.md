@@ -212,3 +212,43 @@ and Firebase-bound states), and the page wiring (landing renders the
 provider redirect flow and posts to the bridge, dashboard stays gated
 on `logged_in`, `firebase-config.js` ships as a null placeholder with
 no invented values).
+
+## GT-143 webhook fast ack
+
+`node tests/run-tests.js` is 74/74 (65 pre-existing plus 9 new GT-143
+cases):
+
+- Fast ack ordering: with a deliberately slow Gemini step (400ms), the
+  webhook's 200 EVENT_RECEIVED is emitted before the step completes,
+  and the reply is still sent afterwards in the same invocation. Local
+  timing harness (400ms simulated Gemini): ack 426ms before the change,
+  1ms after; total handler time unchanged.
+- Duplicate delivery of the same event produces exactly one reply; the
+  repeat is dropped at intake because the durable event record
+  (`evt:<pageId>:<mid>`) is already marked done.
+- FAQ cache: the second message for a clinic is served without a
+  second Sheets FAQ fetch; after the cache entry's TTL expires the
+  next message refetches. Window: 180 seconds, keyed per clinic and
+  spreadsheet (`faq_cache:<clinicId>:<spreadsheetId>`).
+- Post-ack pipeline failure: the event record is marked failed with
+  the error, the failure is visible in the dead-letter store or the
+  clinic System_Logs sheet, and a repeat delivery re-drives the event
+  to a successful reply (attempts counted on the record).
+- Stale drain: an event left in received status past the 6-minute
+  stale window (for example its invocation was killed mid-pipeline) is
+  discovered by key scan and re-driven by the next webhook invocation.
+- Re-drive safety both directions: if the reply already went out
+  (reply_sent marker present) the drain settles the record as
+  already_replied and never resends; if a dead attempt left only its
+  dedup claim (no marker), the drain clears the claim and the reply
+  is delivered exactly once.
+- Concurrent re-drives of the same record are serialized by an
+  atomic evt_claim (putIfAbsent): one runs, the other stands down,
+  exactly one reply goes out.
+- Failed-record drain retries stop at the attempt cap (3): the
+  attempt count advances on every re-drive, so a persistently
+  failing event is never retried in a 24h loop.
+
+Still only provable live: Meta's observed delivery latency against
+the production endpoint, and a real Messenger round trip after the
+fast ack change (the owner's credential-bound proof).
