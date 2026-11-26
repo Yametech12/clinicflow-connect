@@ -25,6 +25,18 @@ const {
 } = require('../_session');
 const { getFirebaseProjectId, verifyFirebaseIdToken } = require('../_firebase');
 
+// GT-141 D3: every non-success outcome leaves a structured server
+// record, so a genuine failure is attributable after the fact. The
+// detail carries ONLY the outcome status and, for invalid_token, the
+// verifier's own stable reason string (api/_firebase.js messages never
+// contain token material). Never log the token, email, uid, sub, or
+// cookie values here. Success stays unlogged.
+function logAuthOutcome(outcome, reason) {
+  const detail = { outcome };
+  if (reason) detail.reason = String(reason);
+  console.error(`[clinicflow][auth_firebase_outcome] ${JSON.stringify(detail)}`);
+}
+
 const MSG_SETUP_PENDING =
   'This step is not switched on yet on our side. Your account is safe and there is nothing for you to fix. Please check back shortly.';
 const MSG_STORAGE_PENDING =
@@ -51,6 +63,7 @@ module.exports = async (req, res) => {
 
   const storageInfo = store.getBackendInfo();
   if (!storageInfo.configured) {
+    logAuthOutcome('setup_pending_storage');
     return res.status(200).json({
       status: 'setup_pending',
       provider: 'firebase',
@@ -59,6 +72,7 @@ module.exports = async (req, res) => {
   }
 
   if (!getFirebaseProjectId()) {
+    logAuthOutcome('setup_pending_project');
     return res.status(200).json({
       status: 'setup_pending',
       provider: 'firebase',
@@ -74,6 +88,7 @@ module.exports = async (req, res) => {
     try {
       claims = await verifyFirebaseIdToken(String(token));
     } catch (verifyErr) {
+      logAuthOutcome('invalid_token', verifyErr && verifyErr.message);
       return res.status(401).json({
         status: 'invalid_token',
         provider: 'firebase',
@@ -99,6 +114,7 @@ module.exports = async (req, res) => {
       // key for a keyed record, or a genuine first bind (fresh session
       // or a record with no key yet). Same gate as the Google callback.
       if (session.recordHasKeyHash && !session.hasValidKey) {
+        logAuthOutcome('forbidden_session');
         return res.status(403).json({
           status: 'forbidden',
           code: 'INVALID_SESSION',
@@ -141,6 +157,7 @@ module.exports = async (req, res) => {
       logged_in: true,
     });
   } catch (err) {
+    logAuthOutcome('error');
     const ref = logServerError('auth_firebase', err);
     return res.status(500).json({
       status: 'error',
