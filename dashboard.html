@@ -232,9 +232,16 @@
   .pilot-text{display:flex;flex-direction:column;gap:8px}
   .pilot-price{font-family:Georgia,"Times New Roman",serif;font-size:34px;font-weight:700;line-height:1.1}
   .pilot-price-cap{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-top:2px}
-  .pilot-regular{font-size:13px;color:var(--muted);margin-top:6px}
+  .pilot-regular{font-size:13px;color:var(--muted);margin-top:2px}
   .pilotbox p{font-size:16px;color:var(--ink)}
   .pilotbox p.pilotnext{font-size:14px;color:var(--muted)}
+  .setup-timeline{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px}
+  .setup-step{border:1px solid var(--line);border-top:2px solid var(--rule);background:var(--card);padding:16px}
+  .setup-step .stepnum{font-size:12px;font-weight:700;letter-spacing:2px;color:var(--teal)}
+  .setup-step h3{font-family:Georgia,"Times New Roman",serif;font-size:18px;margin:6px 0 4px}
+  .setup-step p{font-size:14px;color:var(--muted)}
+  .pilot-deposit{font-size:14px;font-weight:600;color:var(--ink);margin-top:8px}
+  .setup-timeline.dash{grid-template-columns:1fr}
   .statusbox{
     margin-top:16px;background:var(--status-bg);color:var(--status-ink);padding:20px 22px;
     border:1px solid var(--status-line);
@@ -431,16 +438,34 @@
   <section id="pilot">
     <h2>Start with a pilot setup</h2>
     <div class="pilotbox" id="pilotBox">
+      <div class="setup-timeline dash">
+        <div class="setup-step">
+          <div class="stepnum">YOUR PART (ABOUT 15 MINUTES)</div>
+          <h3>You sign in and share your list</h3>
+          <p>About 15 minutes: your price list, your hours, and signing in to your own accounts.</p>
+        </div>
+        <div class="setup-step">
+          <div class="stepnum">OUR PART (3 DAYS)</div>
+          <h3>We configure everything</h3>
+          <p>3 days: we load your price list, connect your accounts, and test bookings on your Page.</p>
+        </div>
+        <div class="setup-step">
+          <div class="stepnum">TOGETHER (LIVE WALKTHROUGH)</div>
+          <h3>You see it answer, then it is live</h3>
+          <p>Live walkthrough: you see the bot answer on your Page; the balance is due then.</p>
+        </div>
+      </div>
       <div class="pilot-grid">
         <div class="pilot-text">
           <p>We set up the pilot for your clinic: a Messenger bot on your own Page that answers price and service questions from your price sheet, collects the patient's name, mobile number, and preferred schedule, writes each booking into your own Google Sheet and Calendar, and sends you a Telegram alert for every confirmed booking. Setup takes 3 days, done by us on your own accounts.</p>
           <p>You own every account and file; we only install and configure.</p>
           <p>What we need from you: your price list, your clinic hours, and about 15 minutes to sign in to your own Facebook, Google, and Telegram using the steps in your dashboard.</p>
-          <p>Connecting your accounts is free and does not start any payment. When you are ready to begin the pilot, we confirm it with you first. Pilot terms: 50 percent deposit by GCash, Maya, or InstaPay to start, and the balance only at the live walkthrough, when you see the bot answering on your own Page.</p>
+          <p>Connecting your accounts is free and does not start any payment. When you are ready to begin the pilot, we confirm it with you first. Pilot terms: 50 percent deposit (₱2,750) by GCash, Maya, or InstaPay to start, and the balance only at the live walkthrough, when you see the bot answering on your own Page.</p>
         </div>
         <div class="pilot-priceblock">
           <div class="pilot-price">₱5,500</div>
           <div class="pilot-price-cap">One-time pilot</div>
+          <div class="pilot-deposit">₱2,750 deposit to start</div>
           <div class="pilot-regular">Regular setup ₱12,000</div>
         </div>
       </div>
