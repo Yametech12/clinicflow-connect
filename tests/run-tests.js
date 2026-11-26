@@ -1303,6 +1303,21 @@ function assertEq(a, b, msg) {
     assert(html.includes('connCount === 3 && profileDone'), 'AE-3 welcome hide condition requires profileDone');
   });
 
+  // 24. GT-139 FL139-02: stamp unification gate.
+  await test('stamp gate FL139-02: pills and summary are unfilled stamps, live summary border', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'dashboard.html'), 'utf8');
+    assert(html.includes('background:transparent;border:1px solid var(--muted);color:var(--muted)'), 'base pill is a muted stamp');
+    assert(html.includes('.pill.pending{background:transparent;border-color:var(--amber);color:var(--amber)}'), 'pending pill stamp');
+    assert(html.includes('.pill.ready{background:transparent;border-color:var(--ink);color:var(--ink)}'), 'ready pill stamp');
+    assert(html.includes('.pill.linked{background:transparent;border-color:var(--green);color:var(--green)}'), 'linked pill stamp');
+    assert(html.includes('border:1px solid var(--status-muted);'), 'summary bordered in status-muted');
+    assert(html.includes('.status-summary.live{border-color:var(--green)}'), 'live summary rule present');
+    assert(html.includes("summaryEl.className = 'status-summary show live'"), 'all connected state adds live class');
+    assert(!/\.pill[^{]*\{[^}]*var\(--green-bg\)/.test(html), 'pill no longer consumes green-bg fill');
+  });
+
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - failed.length}/${results.length} tests passed`);
   if (failed.length) {

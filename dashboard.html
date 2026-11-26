@@ -183,8 +183,8 @@
   .card p.cardbody{font-size:14px;color:var(--muted);flex:1}
   .safety-line{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:8px}
   .pill{
-    display:inline-block;font-size:12px;font-weight:700;padding:3px 10px;border-radius:2px;
-    background:var(--gray-bg);color:var(--muted);align-self:flex-start;
+    display:inline-block;font-size:12px;font-weight:700;padding:2px 9px;border-radius:2px;
+    background:transparent;border:1px solid var(--muted);color:var(--muted);align-self:flex-start;
   }
   .pill.checking{animation:pillPulse 1.2s ease-in-out infinite}
   @keyframes pillPulse{0%,100%{opacity:1}50%{opacity:.55}}
@@ -194,9 +194,9 @@
     .seg-fill{transition:none}
     .dot.pending{animation:none}
   }
-  .pill.pending{background:var(--amber-bg);color:var(--amber)}
-  .pill.ready{background:var(--gray-bg);color:var(--ink)}
-  .pill.linked{background:var(--green-bg);color:var(--green)}
+  .pill.pending{background:transparent;border-color:var(--amber);color:var(--amber)}
+  .pill.ready{background:transparent;border-color:var(--ink);color:var(--ink)}
+  .pill.linked{background:transparent;border-color:var(--green);color:var(--green)}
   button.connect{
     background:var(--teal);color:var(--btn-text);border:none;border-radius:4px;
     padding:11px 20px;min-height:48px;display:flex;align-items:center;justify-content:center;
@@ -237,10 +237,12 @@
   }
   .statusbox h3{font-family:Georgia,"Times New Roman",serif;font-size:18px;margin-bottom:8px}
   .status-summary{
-    font-size:14px;color:var(--status-ink);background:rgba(255,255,255,.06);
-    padding:9px 12px;border-radius:2px;margin-bottom:10px;display:none;
+    font-size:14px;color:var(--status-ink);background:transparent;
+    border:1px solid var(--status-muted);
+    padding:8px 11px;border-radius:2px;margin-bottom:10px;display:none;
   }
   .status-summary.show{display:block}
+  .status-summary.live{border-color:var(--green)}
   .statusbox ul{list-style:none;font-size:14px}
   .statusbox li{padding:7px 0;border-bottom:1px solid var(--status-line);display:flex;justify-content:space-between;align-items:center;gap:12px}
   .statusbox li:last-child{border-bottom:none}
@@ -568,7 +570,7 @@
       if (connCount === 3) {
         summaryEl.textContent =
           'All three connected. Your bot is live: it can now answer patients and take bookings on your Page.';
-        summaryEl.className = 'status-summary show';
+        summaryEl.className = 'status-summary show live';
       } else if (connCount > 0) {
         summaryEl.textContent =
           'Connected so far: ' + connCount +
