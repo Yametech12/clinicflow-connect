@@ -1792,6 +1792,92 @@ function assertEq(a, b, msg) {
     assert(!dash.includes('getRedirectResult'), 'dashboard never calls getRedirectResult');
   });
 
+  // 41. Pro max: Page token travels in the Messenger POST body, never in the URL.
+  await test('pro max messenger token: page token in POST body, not in the request URL', async () => {
+    await seedClinic();
+    await postWebhook(pageEvent({ pageId: 'page_1001', senderId: 'psid_41', mid: 'mid_pm1', text: 'Pila ang cleaning?' }));
+    const call = fetchLog.find((c) => c.url.includes('graph.facebook.com') && c.url.includes('/me/messages'));
+    assert(call, 'messenger call recorded');
+    assert(!call.url.includes('access_token'), 'no token in the Messenger URL');
+    assertEq(call.url, 'https://graph.facebook.com/v21.0/me/messages', 'messenger URL is bare');
+    const body = JSON.parse(call.options.body);
+    assertEq(body.access_token, 'page_token_mock', 'token carried in the POST body');
+    assertEq(body.message.text.length > 0, true, 'reply text still sent');
+  });
+
+  // 42. Pro max: outbound provider fetches carry a timeout signal.
+  await test('pro max fetch timeouts: Gemini and Messenger calls carry an AbortSignal', async () => {
+    await seedClinic();
+    await postWebhook(pageEvent({ pageId: 'page_1001', senderId: 'psid_42', mid: 'mid_pm2', text: 'Pila ang cleaning?' }));
+    const geminiCall = fetchLog.find((c) => c.url.includes('generativelanguage.googleapis.com'));
+    assert(geminiCall, 'gemini called');
+    assert(geminiCall.options.signal, 'gemini fetch carries a timeout signal');
+    const msgCall = fetchLog.find((c) => c.url.includes('/me/messages'));
+    assert(msgCall, 'messenger called');
+    assert(msgCall.options.signal, 'messenger fetch carries a timeout signal');
+  });
+
+  // 43. Pro max: oversize webhook stream body is ignored with 200, no reply.
+  await test('pro max webhook body cap: oversize stream body -> 200 ignored, no pipeline run', async () => {
+    await seedClinic();
+    const big = pageEvent({ pageId: 'page_1001', senderId: 'psid_43', mid: 'mid_pm3', text: 'x'.repeat(2 * 1024 * 1024) });
+    const raw = Buffer.from(JSON.stringify(big), 'utf8');
+    assert(raw.length > 1024 * 1024, 'payload is over the 1 MB cap');
+    const req = Readable.from([raw]);
+    req.method = 'POST';
+    req.query = {};
+    req.headers = { 'x-hub-signature-256': sign(raw, process.env.META_APP_SECRET), 'content-type': 'application/json' };
+    const res = makeRes();
+    await webhookHandler(req, res);
+    assertEq(res.statusCode, 200, 'oversize status');
+    assertEq(res.body, 'EVENT_RECEIVED', 'oversize ack body');
+    assertEq(graphReplies().length, 0, 'no reply for oversize body');
+    assertEq(fetchLog.filter((c) => c.url.includes('generativelanguage.googleapis.com')).length, 0, 'gemini never called');
+  });
+
+  // 44. Pro max: a 12-event batch still completes all replies under bounded concurrency.
+  await test('pro max bounded concurrency: 12-event batch completes all 12 replies', async () => {
+    await seedClinic();
+    const messaging = [];
+    for (let i = 0; i < 12; i += 1) {
+      messaging.push({
+        sender: { id: 'psid_44_' + i },
+        recipient: { id: 'page_1001' },
+        message: { mid: 'mid_pm4_' + i, text: 'Pila ang cleaning?' },
+      });
+    }
+    const res = await postWebhook({ object: 'page', entry: [{ id: 'page_1001', messaging }] });
+    assertEq(res.statusCode, 200, 'batch status');
+    assertEq(graphReplies().length, 12, 'all 12 events replied');
+  });
+
+  // 45. Pro max: oversize clinic POST stream returns 413.
+  await test('pro max clinic body cap: oversize streamed profile save -> 413', async () => {
+    const seeded = await seedClinic();
+    const big = Buffer.from(JSON.stringify({ name: 'x'.repeat(2 * 1024 * 1024) }), 'utf8');
+    const req = Readable.from([big]);
+    req.method = 'POST';
+    req.query = {};
+    req.headers = {
+      cookie: `cf_clinic=${seeded.clinicId}; cf_key=${seeded.key}`,
+      'content-type': 'application/json',
+    };
+    const res = makeRes();
+    await clinicHandler(req, res);
+    assertEq(res.statusCode, 413, 'oversize clinic status');
+  });
+
+  // 46. Pro max: dashboard inputs cap typing at the server caps.
+  await test('pro max input caps: dashboard profile inputs carry maxlength matching the server', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'dashboard.html'), 'utf8');
+    assert(html.includes('id="clinicName" maxlength="140"'), 'clinic name capped at 140');
+    assert(html.includes('id="clinicAddress" maxlength="240"'), 'address capped at 240');
+    assert(html.includes('id="clinicHours" maxlength="160"'), 'hours capped at 160');
+    assert(html.includes('id="clinicSheetId" maxlength="500"'), 'sheet input capped at 500');
+  });
+
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - failed.length}/${results.length} tests passed`);
   if (failed.length) {
