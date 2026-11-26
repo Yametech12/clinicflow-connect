@@ -371,19 +371,19 @@
     <form class="profile" id="profileForm">
       <div class="full">
         <label for="clinicName">Clinic name</label>
-        <input type="text" id="clinicName" placeholder="BrightSmile Dental Clinic" autocomplete="organization">
+        <input type="text" id="clinicName" maxlength="140" placeholder="BrightSmile Dental Clinic" autocomplete="organization">
       </div>
       <div>
         <label for="clinicAddress">Address</label>
-        <input type="text" id="clinicAddress" placeholder="Quezon Ave., Iligan City" autocomplete="street-address">
+        <input type="text" id="clinicAddress" maxlength="240" placeholder="Quezon Ave., Iligan City" autocomplete="street-address">
       </div>
       <div>
         <label for="clinicHours">Clinic hours</label>
-        <input type="text" id="clinicHours" placeholder="Mon to Sat, 9:00 AM to 6:00 PM">
+        <input type="text" id="clinicHours" maxlength="160" placeholder="Mon to Sat, 9:00 AM to 6:00 PM">
       </div>
       <div class="full">
         <label for="clinicSheetId">Your booking sheet, if you already have one (optional)</label>
-        <input type="text" id="clinicSheetId" placeholder="Leave blank. ClinicFlow creates your booking sheet when you connect Google.">
+        <input type="text" id="clinicSheetId" maxlength="500" placeholder="Leave blank. ClinicFlow creates your booking sheet when you connect Google.">
       </div>
       <div class="formactions">
         <button class="savebtn" type="submit" id="saveProfileBtn">Save clinic profile</button>
