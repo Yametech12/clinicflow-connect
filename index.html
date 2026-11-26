@@ -239,6 +239,7 @@
   .langbtn{min-height:44px;padding:10px 16px;font-size:14px;font-weight:600;font-family:inherit;background:var(--card);color:var(--muted);border:none;cursor:pointer}
   .langbtn[aria-pressed="true"]{background:var(--teal);color:var(--btn-text)}
   .langbtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .demo-reset{background:none;border:none;cursor:pointer;font-family:inherit}
   .demo-bookbtn{margin-top:12px}
   .demo-alert{
     margin-top:12px;border:1px dashed var(--teal);background:var(--tg-bg);
@@ -342,6 +343,7 @@
           <button class="savebtn" type="button" id="demoAskBtn">Ask again</button>
         </div>
         <button class="savebtn demo-bookbtn" type="button" id="demoBookBtn">See a booking happen</button>
+        <button class="demo-jump demo-reset" type="button" id="demoResetBtn" hidden>Reset the demo</button>
       </div>
       <div>
         <div class="demo-lang" role="group" aria-label="Demo language">
@@ -527,19 +529,47 @@
     b.addEventListener('click', function () { setDemoLang(b.dataset.lang); });
   });
 
-  // Beats 2 and 3: the sample booking happens, the sheet row and the
-  // Telegram alert appear. Front-end only, sample data throughout.
+  // Staged reveal (Part E-4): beat 0 shows only the price exchange,
+  // beat 1 adds the patient booking line alone, beat 2 adds the bot
+  // confirmation and the payoff (Telegram alert plus bookings row).
+  // Reset returns to beat 0. Front-end only, sample data throughout.
+  var demoBeat = 0;
   var demoBookBtn = document.getElementById('demoBookBtn');
+  var demoResetBtn = document.getElementById('demoResetBtn');
   if (demoBookBtn) {
     demoBookBtn.addEventListener('click', function () {
+      if (demoBeat === 0) {
+        var patient = document.getElementById('demoBeatPatient');
+        if (patient) patient.classList.add('show');
+        demoBeat = 1;
+        demoBookBtn.textContent = 'Confirm the booking';
+      } else if (demoBeat === 1) {
+        var bot = document.getElementById('demoBeatBot');
+        if (bot) bot.classList.add('show');
+        var payoff = document.getElementById('demoPayoff');
+        if (payoff) payoff.hidden = false;
+        demoBeat = 2;
+        demoBookBtn.disabled = true;
+        demoBookBtn.textContent = 'Booking saved in the sample sheet';
+        if (demoResetBtn) demoResetBtn.hidden = false;
+      }
+    });
+  }
+  if (demoResetBtn) {
+    demoResetBtn.addEventListener('click', function () {
       ['demoBeatPatient', 'demoBeatBot'].forEach(function (id) {
         var el = document.getElementById(id);
-        if (el) el.classList.add('show');
+        if (el) el.classList.remove('show');
       });
       var payoff = document.getElementById('demoPayoff');
-      if (payoff) payoff.hidden = false;
-      demoBookBtn.disabled = true;
-      demoBookBtn.textContent = 'Booking saved in the sample sheet';
+      if (payoff) payoff.hidden = true;
+      demoBeat = 0;
+      renderDemoReply();
+      if (demoBookBtn) {
+        demoBookBtn.disabled = false;
+        demoBookBtn.textContent = 'See a booking happen';
+      }
+      demoResetBtn.hidden = true;
     });
   }
 
