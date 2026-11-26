@@ -672,13 +672,44 @@
     try { sessionStorage.removeItem(FB_REDIRECT_FLAG); } catch (e) { /* nothing to clear */ }
   }
 
+  // GT-141 D1/D2: bound every Firebase wait. A promise that never
+  // settles (hung SDK import on a phone network, a redirect result
+  // that never resolves) rejects with a TIMEOUT error instead of
+  // leaving the page stuck with no resolution and no message.
+  function withTimeout(promise, ms, label) {
+    if (typeof setTimeout !== 'function' || typeof clearTimeout !== 'function') {
+      return Promise.resolve(promise);
+    }
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        var err = new Error((label || 'operation') + ' timed out after ' + ms + 'ms');
+        err.code = 'TIMEOUT';
+        reject(err);
+      }, ms);
+      Promise.resolve(promise).then(function (value) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      }, function (err) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+  }
+
   // Returning from the Firebase redirect: exchange the result for an ID
   // token, post it to the bridge, and open the dashboard on success.
   function handleFirebaseReturn() {
     if (!firebaseReady()) return;
     var redirectPending = fbRedirectPending();
-    loadFirebaseAuth()
-      .then(function (ctx) { return ctx.authMod.getRedirectResult(ctx.auth); })
+    withTimeout(loadFirebaseAuth(), 10000, 'firebase auth load')
+      .then(function (ctx) { return withTimeout(ctx.authMod.getRedirectResult(ctx.auth), 10000, 'firebase redirect result'); })
       .then(function (result) {
         clearFbRedirectPending();
         if (!result || !result.user) return null;
@@ -698,7 +729,7 @@
               return;
             }
             if (redirectPending) {
-              showLoginBanner('Sign in did not finish. Please try again.');
+              showLoginBanner((data && data.message) || 'Sign in did not finish. Please try again.');
             }
           });
       })
@@ -710,14 +741,50 @@
   }
   handleFirebaseReturn();
 
+  // GT-141 D1: navigation watchdog. signInWithRedirect is expected to
+  // navigate the page away; its promise may never settle, so recovery
+  // cannot depend on it. If the page is still here when the timer
+  // fires, the navigation never happened: clear the pending flag,
+  // restore the buttons, and tell the user. Leaving the page (pagehide
+  // or the tab going hidden as the browser switches away) disarms it.
+  var FB_NAV_WATCHDOG_MS = 15000;
+  function armFbNavWatchdog(onStuck) {
+    var timer = setTimeout(function () {
+      disarmFbNavWatchdog();
+      onStuck();
+    }, FB_NAV_WATCHDOG_MS);
+    function onVisibilityChange() {
+      if (document.hidden || document.visibilityState === 'hidden') disarmFbNavWatchdog();
+    }
+    function disarmFbNavWatchdog() {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      window.removeEventListener('pagehide', disarmFbNavWatchdog);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    }
+    window.addEventListener('pagehide', disarmFbNavWatchdog);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return disarmFbNavWatchdog;
+  }
+
   function startFirebaseLogin(restoreButtons) {
-    loadFirebaseAuth()
+    var disarmNavWatchdog = function () {};
+    withTimeout(loadFirebaseAuth(), 10000, 'firebase auth load')
       .then(function (ctx) {
         var provider = new ctx.authMod.GoogleAuthProvider();
         setFbRedirectPending();
-        return ctx.authMod.signInWithRedirect(ctx.auth, provider);
+        var navPromise = ctx.authMod.signInWithRedirect(ctx.auth, provider);
+        disarmNavWatchdog = armFbNavWatchdog(function () {
+          clearFbRedirectPending();
+          restoreButtons();
+          showLoginBanner('Sign in did not start. Please try again in a moment.');
+        });
+        return navPromise;
       })
       .catch(function () {
+        disarmNavWatchdog();
         clearFbRedirectPending();
         restoreButtons();
         showLoginBanner('Sign in did not start. Please try again in a moment.');
