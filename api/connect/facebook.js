@@ -10,6 +10,9 @@ const MSG_STORAGE_PENDING =
   'This step cannot save anything yet because our server storage is not switched on. There is nothing for you to fix; please check back shortly.';
 
 module.exports = async (req, res) => {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ status: 'method_not_allowed' });
+  }
   const appId = process.env.META_APP_ID;
   const appSecret = process.env.META_APP_SECRET;
   const storageInfo = store.getBackendInfo();

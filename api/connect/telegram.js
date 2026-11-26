@@ -26,6 +26,9 @@ function generateCode() {
 }
 
 module.exports = async (req, res) => {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ status: 'method_not_allowed' });
+  }
   const rawUsername = process.env.TELEGRAM_BOT_USERNAME || '';
   const botUsername = rawUsername.trim().replace(/^@+/, '');
   const botToken = process.env.TELEGRAM_BOT_TOKEN;

@@ -1356,6 +1356,26 @@ function assertEq(a, b, msg) {
     assert(html.includes('a.seg{text-decoration:none;cursor:pointer;min-height:44px'), 'segment anchors keep the 44px rule');
   });
 
+  // 27. GT-139 FL139-06: method discipline on connect routes and health.
+  await test('method discipline FL139-06: non-GET on facebook/google/telegram connect and health -> 405', async () => {
+    for (const [name, handler] of [['facebook', connectFacebook], ['google', connectGoogle], ['telegram', connectTelegram]]) {
+      for (const method of ['POST', 'DELETE', 'PUT']) {
+        const res = makeRes();
+        await handler(makeReq({ method, headers: { host: 'x.example', 'x-forwarded-proto': 'https' } }), res);
+        assertEq(res.statusCode, 405, name + ' connect ' + method + ' is 405');
+        assertEq(res.body.status, 'method_not_allowed', name + ' connect ' + method + ' body');
+      }
+    }
+    for (const method of ['POST', 'DELETE']) {
+      const res = makeRes();
+      healthHandler(makeReq({ method, headers: {} }), res);
+      assertEq(res.statusCode, 405, 'health ' + method + ' is 405');
+    }
+    const okRes = makeRes();
+    healthHandler(makeReq({ method: 'GET', headers: {} }), okRes);
+    assertEq(okRes.statusCode, 200, 'health GET still works');
+  });
+
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - failed.length}/${results.length} tests passed`);
   if (failed.length) {
