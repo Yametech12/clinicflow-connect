@@ -831,6 +831,7 @@ function assertEq(a, b, msg) {
     res = makeRes();
     await clinicHandler(makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie } }), res);
     assertEq(res.body.logged_in, false, 'unbound clinic logged_in false');
+    assertEq(res.body.authenticated, false, 'authenticated mirrors logged_in when unbound');
     assertEq(res.body.connections.google.bound, false, 'bound flag false');
 
     // Bind the sub -> logged in everywhere
@@ -839,6 +840,7 @@ function assertEq(a, b, msg) {
     res = makeRes();
     await clinicHandler(makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie } }), res);
     assertEq(res.body.logged_in, true, 'bound clinic logged_in true');
+    assertEq(res.body.authenticated, true, 'authenticated mirrors logged_in when bound');
     assertEq(res.body.connections.google.bound, true, 'bound flag true');
   });
 
@@ -1250,6 +1252,32 @@ function assertEq(a, b, msg) {
       const css = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
       const hits = css.match(/border-left\s*:\s*(?:[2-9]|\d{2,})px/g) || [];
       assertEq(hits.length, 0, file + ' has side accent stripes: ' + hits.join(', '));
+    }
+  });
+
+  // 21. GT-138: branded 404 page ships at the repo root, links home, and
+  // carries no em dash character.
+  await test('branded 404: 404.html exists, links to /, no em dash', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const file = path.join(__dirname, '..', '404.html');
+    assert(fs.existsSync(file), '404.html exists at repo root');
+    const html = fs.readFileSync(file, 'utf8');
+    assert(/href="\/"/.test(html), '404.html contains a link to /');
+    assert(!html.includes('\u2014'), '404.html contains no em dash character');
+  });
+
+  // 22. GT-138: icon declarations are not duplicated. Each page carries
+  // exactly one SVG icon link pointing at /favicon.svg and no data URI
+  // icon link.
+  await test('icon declarations: one /favicon.svg link per page, no data URI icon', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    for (const file of ['index.html', 'dashboard.html']) {
+      const html = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+      const svgIcons = html.match(/<link rel="icon" type="image\/svg\+xml" href="\/favicon\.svg">/g) || [];
+      assertEq(svgIcons.length, 1, file + ' has exactly one /favicon.svg icon link');
+      assert(!html.includes('href="data:image/svg+xml'), file + ' has no data URI icon link');
     }
   });
 
