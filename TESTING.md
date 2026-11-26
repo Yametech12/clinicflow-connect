@@ -178,6 +178,25 @@ Still only provable live (parent smoke after deploy): the CSP header set against
 
 Side accent stripes removed (owner order): every `border-left` wider than 1px is gone from `index.html` and `dashboard.html`; the pilot boxes and welcome box now carry a 2px ink top rule, the bookings warning state is a tonal amber surface, and the connect cards lost their 4px teal top stripe for the same ink rule. The anti-AI-look pass squared the pill and progress shapes, turned the how-it-works row into a hairline ledger list, and raised the demo panel with an ink top rule and a raised phone column on desktop. Result: **34 of 34 tests passed** (the 33 GT-136 tests plus a new static design gate, test 20, which fails the suite if a `border-left` wider than 1px returns to either page). Copy, prices, and pilot terms unchanged; no wiring touched.
 
+## Pro Max upgrade (Nov 26, 2026)
+
+Branch `upgrade/pro-max`, no deploy. See [PRO_MAX.md](./PRO_MAX.md) for the
+full audit. Result: **60 of 60 tests passed** (`node tests/run-tests.js`;
+the 54 pre-existing tests plus 6 new pro max cases):
+
+- Page token in the Messenger POST body, never in the request URL.
+- Gemini and Messenger fetches carry a timeout signal (KV 10s, Google
+  15s, Gemini 25s, Messenger and Telegram 15s, Firebase certs 10s).
+- Oversize webhook stream body (over 1 MB) is ignored with a logged 200
+  and zero pipeline runs; a 12-event batch completes all 12 replies under
+  bounded concurrency (chunks of 5).
+- Oversize clinic POST stream returns 413.
+- Dashboard profile inputs carry maxlength matching the server caps.
+
+Still only provable live (unchanged from section 3, plus): a Messenger
+reply still arrives after the token-in-body change, and a slow Gemini call
+fails fast instead of hanging the function.
+
 ## GT-139 FL139-08 Firebase login gates
 
 `node tests/run-tests.js` covers the Firebase migration behind the
