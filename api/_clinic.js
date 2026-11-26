@@ -2,7 +2,7 @@
 // Splits clinic data into disjoint KV keys (meta, profile, facebook, google, telegram)
 // so concurrent writers never clobber each other. Migrates legacy clinic:<id>
 // records on first read.
-const SECTIONS = ['meta', 'profile', 'facebook', 'google', 'telegram'];
+const SECTIONS = ['meta', 'profile', 'facebook', 'google', 'telegram', 'auth'];
 
 function sectionKey(clinicId, section) {
   return `clinic:${clinicId}:${section}`;
@@ -59,11 +59,11 @@ async function migrateLegacyClinicIfNeeded(store, clinicId) {
 async function getClinic(store, clinicId) {
   if (!store || !clinicId) return null;
 
-  const [meta, profile, facebook, google, telegram] = await Promise.all(
+  const [meta, profile, facebook, google, telegram, auth] = await Promise.all(
     SECTIONS.map((sec) => store.get(sectionKey(clinicId, sec)))
   );
 
-  if (!meta && !profile && !facebook && !google && !telegram) {
+  if (!meta && !profile && !facebook && !google && !telegram && !auth) {
     return migrateLegacyClinicIfNeeded(store, clinicId);
   }
 
@@ -74,6 +74,7 @@ async function getClinic(store, clinicId) {
     facebook: facebook || null,
     google: google || null,
     telegram: telegram || null,
+    auth: auth || null,
     createdAt: (meta && meta.createdAt) || null,
     updatedAt: (meta && meta.updatedAt) || null,
   };
@@ -153,10 +154,61 @@ async function unbindGoogleSub(store, sub, clinicId) {
   }
 }
 
+// Firebase identity index (GT-139 FL139-08): maps a Firebase uid to the
+// clinic record that uid signed in to, mirroring the Google sub index.
+function firebaseUidIndexKey(uid) {
+  return `clinicByFirebaseUid:${uid}`;
+}
+
+async function getClinicIdByFirebaseUid(store, uid) {
+  if (!store || !uid) return null;
+  const uidStr = String(uid);
+  const indexKey = firebaseUidIndexKey(uidStr);
+  const record = await store.get(indexKey);
+  if (!record || !record.clinicId) return null;
+
+  const auth = await getClinicSection(store, record.clinicId, 'auth');
+  if (auth && auth.firebaseUid) {
+    if (auth.firebaseUid === uidStr) {
+      return record.clinicId;
+    }
+    await store.del(indexKey);
+    const ownKey = firebaseUidIndexKey(auth.firebaseUid);
+    const own = await store.get(ownKey);
+    if (!own || own.clinicId !== record.clinicId) {
+      await store.put(ownKey, { clinicId: record.clinicId });
+    }
+    return null;
+  }
+
+  return record.clinicId;
+}
+
+async function bindFirebaseUid(store, uid, clinicId) {
+  if (!store || !uid || !clinicId) return;
+  const uidStr = String(uid);
+  // Record first, then the index, so a lookup never sees an index entry
+  // the record does not back (same order as bindGoogleSub, GT-136 A10).
+  const auth = await getClinicSection(store, clinicId, 'auth');
+  if (auth && auth.firebaseUid !== uidStr) {
+    await saveClinicSection(store, clinicId, 'auth', { ...auth, firebaseUid: uidStr });
+  }
+  await store.put(firebaseUidIndexKey(uidStr), { clinicId });
+}
+
+async function unbindFirebaseUid(store, uid, clinicId) {
+  if (!store || !uid) return;
+  const record = await store.get(firebaseUidIndexKey(String(uid)));
+  if (record && record.clinicId === clinicId) {
+    await store.del(firebaseUidIndexKey(String(uid)));
+  }
+}
+
 module.exports = {
   SECTIONS,
   sectionKey,
   googleSubIndexKey,
+  firebaseUidIndexKey,
   getClinic,
   getClinicSection,
   saveClinicSection,
@@ -164,4 +216,7 @@ module.exports = {
   getClinicIdByGoogleSub,
   bindGoogleSub,
   unbindGoogleSub,
+  getClinicIdByFirebaseUid,
+  bindFirebaseUid,
+  unbindFirebaseUid,
 };

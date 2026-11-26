@@ -407,6 +407,10 @@ function sanitizeClinicSummary(clinic, { includeSensitive = true } = {}) {
   const fb = (clinic && clinic.facebook) || {};
   const google = (clinic && clinic.google) || {};
   const tg = (clinic && clinic.telegram) || {};
+  // GT-139 FL139-08: the signed-in identity can come from the Firebase
+  // auth binding; the Google product section stays the first source so
+  // the payload shape the dashboard consumes does not change.
+  const auth = (clinic && clinic.auth) || {};
   const googleConnected = Boolean(google.accessToken || google.refreshToken);
 
   return {
@@ -427,9 +431,9 @@ function sanitizeClinicSummary(clinic, { includeSensitive = true } = {}) {
       },
       google: {
         connected: googleConnected,
-        bound: Boolean(google.googleSub),
+        bound: Boolean(google.googleSub || auth.firebaseUid),
         has_refresh_token: Boolean(google.refreshToken),
-        email: includeSensitive ? (google.email || null) : null,
+        email: includeSensitive ? (google.email || auth.email || null) : null,
         spreadsheet_id: includeSensitive ? (google.spreadsheetId || null) : null,
         spreadsheet_url: includeSensitive ? (google.spreadsheetUrl || null) : null,
         has_spreadsheet: Boolean(google.spreadsheetId),

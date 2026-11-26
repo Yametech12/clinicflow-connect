@@ -423,6 +423,7 @@
 
 </div>
 
+<script src="/firebase-config.js"></script>
 <script>
 (function () {
   // Sample demo engine (front-end only, zero backend calls)
@@ -522,8 +523,75 @@
     }
   } catch (e) { /* banner stays hidden */ }
 
-  // Log in and pilot CTAs both start the Google sign in flow. The connect
-  // endpoint returns the OAuth URL as JSON, so fetch it and then navigate.
+  // GT-139 FL139-08: login runs on Firebase Authentication (Google
+  // provider, redirect flow) once the Firebase web config is filled in
+  // firebase-config.js. Until then the buttons keep the existing Google
+  // sign in flow below, unchanged.
+  var firebaseConfig = window.CF_FIREBASE_CONFIG || null;
+  function firebaseReady() {
+    return Boolean(
+      firebaseConfig && firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.authDomain
+    );
+  }
+  var firebaseAuthPromise = null;
+  function loadFirebaseAuth() {
+    if (!firebaseAuthPromise) {
+      firebaseAuthPromise = Promise.all([
+        import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
+        import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js')
+      ]).then(function (mods) {
+        var app = mods[0].initializeApp(firebaseConfig);
+        return { auth: mods[1].getAuth(app), authMod: mods[1] };
+      });
+    }
+    return firebaseAuthPromise;
+  }
+
+  // Returning from the Firebase redirect: exchange the result for an ID
+  // token, post it to the bridge, and open the dashboard on success.
+  function handleFirebaseReturn() {
+    if (!firebaseReady()) return;
+    loadFirebaseAuth()
+      .then(function (ctx) { return ctx.authMod.getRedirectResult(ctx.auth); })
+      .then(function (result) {
+        if (!result || !result.user) return null;
+        return result.user.getIdToken();
+      })
+      .then(function (idToken) {
+        if (!idToken) return;
+        return fetchWithTimeout('/api/auth/firebase', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id_token: idToken })
+        }, 8000)
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data && data.logged_in) {
+              window.location.href = '/dashboard';
+              return;
+            }
+            showLoginBanner('Sign in did not finish. Please try again.');
+          });
+      })
+      .catch(function () {
+        showLoginBanner('Sign in did not finish. Please try again.');
+      });
+  }
+  handleFirebaseReturn();
+
+  function startFirebaseLogin(restoreButtons) {
+    loadFirebaseAuth()
+      .then(function (ctx) {
+        var provider = new ctx.authMod.GoogleAuthProvider();
+        return ctx.authMod.signInWithRedirect(ctx.auth, provider);
+      })
+      .catch(function () {
+        restoreButtons();
+        showLoginBanner('Sign in did not start. Please try again in a moment.');
+      });
+  }
+
+  // Log in and pilot CTAs both start the sign in flow.
   var loginBusy = false;
   function startLogin(e) {
     if (loginBusy) return;
@@ -541,6 +609,10 @@
         b.disabled = false;
         if (b.dataset.label) b.textContent = b.dataset.label;
       });
+    }
+    if (firebaseReady()) {
+      startFirebaseLogin(restoreButtons);
+      return;
     }
     fetchWithTimeout('/api/connect/google', {}, 8000)
       .then(function (r) { return r.json(); })

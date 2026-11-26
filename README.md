@@ -202,3 +202,29 @@ No external npm dependencies. Functions use only Node 18+ built-ins
 
 See [TESTING.md](./TESTING.md) for the local verification checklist and what
 requires live provider accounts to verify end-to-end.
+
+## Login identity vs Google product connect (GT-139 FL139-08)
+
+Login identity and the Google product connection are separate duties.
+Login moves to Firebase Authentication (Google provider, redirect flow):
+the browser signs in with Firebase, posts the ID token to
+`POST /api/auth/firebase`, the server verifies it in `api/_firebase.js`
+(Node built-ins only, no new dependencies) and issues the existing
+`cf_clinic` and `cf_key` session. `GET /api/clinic` keeps returning
+`authenticated` and `logged_in` with the same names and meanings; the
+login fact reads the record's `auth` section (Firebase binding), with
+the legacy Google binding honored during the transition window.
+The clinic record gains an `auth` section
+(`clinic:<clinicId>:auth`: Firebase uid, email, Google sub, provider)
+and a `clinicByFirebaseUid:<uid>` index mirroring `clinicByGoogleSub`.
+The Google connect on the dashboard remains a product connection
+(Sheets and Calendar tokens and Sheet provisioning in
+`api/callback/google.js`); it is no longer the login entry point once
+Firebase is configured. The Firebase web config (public identifiers)
+lives in `firebase-config.js`; it stays null until the ClinicFlow
+Firebase project exists, and while it is null the login buttons keep
+the existing Google flow. The server reads the project id from the
+`FIREBASE_PROJECT_ID` environment variable (see `.env.example`).
+Retirement rule: the login duty of the old Google flow retires only
+after the new login verifies end to end in tests and a production
+smoke with a real Google account.

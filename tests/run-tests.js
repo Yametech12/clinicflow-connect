@@ -17,6 +17,7 @@ process.env.TELEGRAM_BOT_TOKEN = 'test_tg_token';
 process.env.TELEGRAM_BOT_USERNAME = 'clinicflowph_alerts_bot';
 process.env.TELEGRAM_WEBHOOK_SECRET = 'test_tg_webhook_secret';
 process.env.ADMIN_PROBE_TOKEN = 'test_admin_probe';
+process.env.FIREBASE_PROJECT_ID = 'clinicflow-test-project';
 delete process.env.PUBLIC_BASE_URL;
 delete process.env.GEMINI_MODEL;
 
@@ -70,6 +71,8 @@ const callbackGoogle = require('../api/callback/google');
 const callbackFacebook = require('../api/callback/facebook');
 const logoutHandler = require('../api/logout');
 const bookingsHandler = require('../api/bookings');
+const firebaseAuth = require('../api/_firebase');
+const firebaseBridge = require('../api/auth/firebase');
 
 // --- fetch mock ---
 const fetchLog = [];
@@ -1403,6 +1406,153 @@ function assertEq(a, b, msg) {
     );
     assertEq(res2.body.clinic_id, res.body.clinic_id, 'rotated session is stable on re-read');
     assertEq(res2.body.session_issued, false, 'no second rotation');
+  });
+
+  // 29. GT-139 FL139-08: Firebase ID token verification (hand-rolled).
+  await test('firebase verify FL139-08: valid token passes, expired/wrong-audience/bad-signature rejected', async () => {
+    const pair = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const publicPem = pair.publicKey.export({ type: 'spki', format: 'pem' });
+    firebaseAuth._setCertFetcherForTests(async () => ({ testkid: publicPem }));
+    const projectId = 'clinicflow-test-project';
+    const mint = (overrides = {}) => {
+      const now = Math.floor(Date.now() / 1000);
+      const header = { alg: 'RS256', kid: 'testkid', typ: 'JWT' };
+      const payload = {
+        iss: `https://securetoken.google.com/${projectId}`,
+        aud: projectId,
+        sub: 'uid_test_1',
+        iat: now - 10,
+        exp: now + 3600,
+        email: 'firebase.owner@example.com',
+        firebase: { identities: { 'google.com': ['sub_fb_1'] }, sign_in_provider: 'google.com' },
+        ...overrides,
+      };
+      const enc = (o) => Buffer.from(JSON.stringify(o), 'utf8').toString('base64url');
+      const data = `${enc(header)}.${enc(payload)}`;
+      const sig = crypto.sign('RSA-SHA256', Buffer.from(data, 'utf8'), pair.privateKey).toString('base64url');
+      return `${data}.${sig}`;
+    };
+    const claims = await firebaseAuth.verifyFirebaseIdToken(mint());
+    assertEq(claims.uid, 'uid_test_1', 'uid extracted');
+    assertEq(claims.email, 'firebase.owner@example.com', 'email extracted');
+    assertEq(claims.googleSub, 'sub_fb_1', 'google sub extracted from provider identities');
+
+    let rejected = 0;
+    for (const bad of [mint({ exp: Math.floor(Date.now() / 1000) - 60 }), mint({ aud: 'other-project' }), mint({ iss: 'https://securetoken.google.com/other-project' })]) {
+      try { await firebaseAuth.verifyFirebaseIdToken(bad); } catch (e) { rejected += 1; }
+    }
+    assertEq(rejected, 3, 'expired, wrong audience, and wrong issuer all rejected');
+    const good = mint();
+    const tampered = good.slice(0, -4) + (good.endsWith('AAAA') ? 'BBBB' : 'AAAA');
+    let tamperRejected = false;
+    try { await firebaseAuth.verifyFirebaseIdToken(tampered); } catch (e) { tamperRejected = true; }
+    assert(tamperRejected, 'tampered signature rejected');
+    global.__mintFirebase = mint;
+  });
+
+  // 30. GT-139 FL139-08: bridge binds, adopts by Google sub, rejects bad tokens.
+  await test('firebase bridge FL139-08: bind sets session contract, adoption by sub, bad token sets nothing', async () => {
+    const mint = global.__mintFirebase;
+    assert(mint, 'firebase mint helper available');
+    const postBridge = async (token, cookie) => {
+      const res = makeRes();
+      await firebaseBridge(
+        makeReq({
+          method: 'POST',
+          headers: { host: 'x.example', 'x-forwarded-proto': 'https', ...(cookie ? { cookie } : {}) },
+          body: { id_token: token },
+        }),
+        res
+      );
+      return res;
+    };
+
+    // Method discipline on the bridge itself.
+    const getRes = makeRes();
+    await firebaseBridge(makeReq({ method: 'GET', headers: {} }), getRes);
+    assertEq(getRes.statusCode, 405, 'bridge GET is 405');
+
+    // Bad token: 401, no cookies, no auth section anywhere new.
+    const badRes = await postBridge('not-a-token', null);
+    assertEq(badRes.statusCode, 401, 'bad token rejected');
+    assertEq(badRes.headers['set-cookie'], undefined, 'bad token sets no cookies');
+
+    // Bind: a fresh anonymous session binds the uid to its own clinic.
+    const bindRes = await postBridge(mint(), null);
+    assertEq(bindRes.statusCode, 200, 'bind ok');
+    assertEq(bindRes.body.status, 'signed_in', 'bind status');
+    assertEq(bindRes.body.logged_in, true, 'bind logged_in true');
+    assertEq(bindRes.body.authenticated, true, 'bind authenticated true');
+    const boundId = bindRes.body.clinic_id;
+    const authSection = await clinicStore.getClinicSection(store, boundId, 'auth');
+    assertEq(authSection.firebaseUid, 'uid_test_1', 'auth section stored');
+    assertEq(await clinicStore.getClinicIdByFirebaseUid(store, 'uid_test_1'), boundId, 'uid index resolves');
+
+    // Contract: GET /api/clinic with the issued pair reports logged in,
+    // with the same field names as before the migration.
+    const bindCookies = bindRes.headers['set-cookie'];
+    const bindCookieStr = Array.isArray(bindCookies) ? bindCookies.join(';') : String(bindCookies || '');
+    const pairCookie = bindCookieStr.split(';').filter((p) => p.includes('cf_clinic=') || p.includes('cf_key=')).map((p) => p.split(';')[0].trim()).join('; ');
+    const clinicRes = makeRes();
+    await clinicHandler(makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: pairCookie } }), clinicRes);
+    assertEq(clinicRes.body.logged_in, true, 'clinic logged_in via firebase binding');
+    assertEq(clinicRes.body.authenticated, true, 'clinic authenticated mirrors logged_in');
+    assertEq(clinicRes.body.connections.google.bound, true, 'bound flag via auth binding');
+    assertEq(clinicRes.body.connections.google.email, 'firebase.owner@example.com', 'email read from auth binding');
+    for (const key of ['clinic_id', 'profile', 'connections', 'ready', 'storage_configured', 'session_issued']) {
+      assert(key in clinicRes.body, 'clinic payload keeps field: ' + key);
+    }
+
+    // Adoption: a clinic already bound to the token's Google sub is
+    // adopted by a different browser clinic, with a rotated key. Uses a
+    // fresh uid and sub so the uid index from the bind case above does
+    // not win resolution first (uid resolution is checked separately).
+    const clinicA = session.createClinicId();
+    await clinicStore.saveClinicSection(store, clinicA, 'google', {
+      email: 'firebase.owner@example.com', googleSub: 'sub_fb_2',
+      accessToken: 'tok_a', refreshToken: 'ref_a', expiresAt: 0,
+      spreadsheetId: 'sheet_A', spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sheet_A',
+      calendarId: 'primary', connectedAt: new Date().toISOString(),
+    });
+    await clinicStore.bindGoogleSub(store, 'sub_fb_2', clinicA);
+    const clinicB = session.createClinicId();
+    const keyB = session.createClinicKey();
+    await clinicStore.saveClinicSection(store, clinicB, 'meta', {
+      clinicId: clinicB, keyHash: session.hashClinicKey(keyB),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    const adoptToken = mint({
+      sub: 'uid_test_2',
+      firebase: { identities: { 'google.com': ['sub_fb_2'] }, sign_in_provider: 'google.com' },
+    });
+    const adoptRes = await postBridge(adoptToken, `cf_clinic=${clinicB}; cf_key=${keyB}`);
+    assertEq(adoptRes.body.clinic_id, clinicA, 'adoption lands on the sub-bound clinic');
+    const adoptCookies = adoptRes.headers['set-cookie'];
+    const adoptCookieStr = Array.isArray(adoptCookies) ? adoptCookies.join(';') : String(adoptCookies || '');
+    assert(adoptCookieStr.includes(`cf_clinic=${clinicA}`), 'adoption cookie points at adopted clinic');
+    const adoptedAuth = await clinicStore.getClinicSection(store, clinicA, 'auth');
+    assertEq(adoptedAuth.firebaseUid, 'uid_test_2', 'uid recorded on adopted clinic');
+  });
+
+  // 31. GT-139 FL139-08: pages carry the provider flow; logged-out gate holds.
+  await test('firebase pages FL139-08: login page renders provider flow, dashboard gated when logged out', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const idx = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    assert(idx.includes('/firebase-config.js'), 'landing loads the firebase config');
+    assert(idx.includes("'/api/auth/firebase'") || idx.includes('/api/auth/firebase'), 'landing posts to the bridge');
+    assert(idx.includes('signInWithRedirect'), 'landing uses the redirect flow');
+    assert(idx.includes("fetchWithTimeout('/api/connect/google'"), 'legacy google flow kept as fallback while config is null');
+    const dash = fs.readFileSync(path.join(__dirname, '..', 'dashboard.html'), 'utf8');
+    assert(dash.includes('/firebase-config.js'), 'dashboard loads the firebase config');
+    assert(dash.includes("clinic.logged_in !== true") || dash.includes('logged_in'), 'dashboard gate still keys off logged_in');
+    const cfg = fs.readFileSync(path.join(__dirname, '..', 'firebase-config.js'), 'utf8');
+    assert(cfg.includes('window.CF_FIREBASE_CONFIG = null'), 'config placeholder is null, no invented values');
+    // Logged-out dashboard contract: anonymous clinic read is logged out.
+    const res = makeRes();
+    await clinicHandler(makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https' } }), res);
+    assertEq(res.body.logged_in, false, 'anonymous session logged_in false');
+    assertEq(res.body.authenticated, false, 'anonymous session authenticated false');
   });
 
   const failed = results.filter((r) => r[0] === 'FAIL');

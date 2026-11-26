@@ -34,8 +34,11 @@ module.exports = async (req, res) => {
   try {
     const clinic = await clinicStore.getClinic(store, clinicId);
     const google = (clinic && clinic.google) || null;
+    // GT-139 FL139-08: a Firebase auth binding counts as logged in here
+    // too; the sheet read itself still needs the Google product section.
+    const authBound = Boolean(clinic && clinic.auth && clinic.auth.firebaseUid);
 
-    if (!google || !google.googleSub) {
+    if (!google || (!google.googleSub && !authBound)) {
       return res.status(401).json({ status: 'login_required', bookings: [] });
     }
 

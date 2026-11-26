@@ -482,6 +482,7 @@
 
 </div>
 
+<script src="/firebase-config.js"></script>
 <script>
 (function () {
   var state = { facebook: 'unknown', google: 'unknown', telegram: 'unknown' };
@@ -1112,6 +1113,27 @@
     retryBtn.addEventListener('click', function () {
       hideShellRetry();
       gate();
+    });
+  }
+
+  // GT-139 FL139-08: logging out ends the Firebase browser session too,
+  // when Firebase login is configured. Fire and forget: the form still
+  // posts to /api/logout, which rotates the server session as before.
+  var logoutForm = document.querySelector('.logoutform');
+  if (logoutForm) {
+    logoutForm.addEventListener('submit', function () {
+      try {
+        var cfg = window.CF_FIREBASE_CONFIG;
+        if (cfg && cfg.apiKey && cfg.projectId) {
+          Promise.all([
+            import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
+            import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js')
+          ]).then(function (mods) {
+            var app = mods[0].initializeApp(cfg);
+            return mods[1].signOut(mods[1].getAuth(app));
+          }).catch(function () { /* server logout still proceeds */ });
+        }
+      } catch (e) { /* server logout still proceeds */ }
     });
   }
 

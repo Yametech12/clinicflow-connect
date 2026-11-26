@@ -80,7 +80,15 @@ module.exports = async (req, res) => {
       }
 
       const includeSensitive = Boolean(effective.hasValidKey);
-      const loggedIn = Boolean(clinic && clinic.google && clinic.google.googleSub);
+      // GT-139 FL139-08: the login fact comes from the verified provider
+      // binding. The legacy Google binding stays honored during the
+      // transition window so a clinic mid-migration never sees a false
+      // logout. Field names and meanings are unchanged.
+      const loggedIn = Boolean(
+        clinic &&
+          ((clinic.google && clinic.google.googleSub) ||
+            (clinic.auth && clinic.auth.firebaseUid))
+      );
 
       return res.status(200).json({
         status: 'ok',

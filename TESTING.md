@@ -177,3 +177,19 @@ Still only provable live (parent smoke after deploy): the CSP header set against
 ## GT-137 design pass (Nov 25, 2026)
 
 Side accent stripes removed (owner order): every `border-left` wider than 1px is gone from `index.html` and `dashboard.html`; the pilot boxes and welcome box now carry a 2px ink top rule, the bookings warning state is a tonal amber surface, and the connect cards lost their 4px teal top stripe for the same ink rule. The anti-AI-look pass squared the pill and progress shapes, turned the how-it-works row into a hairline ledger list, and raised the demo panel with an ink top rule and a raised phone column on desktop. Result: **34 of 34 tests passed** (the 33 GT-136 tests plus a new static design gate, test 20, which fails the suite if a `border-left` wider than 1px returns to either page). Copy, prices, and pilot terms unchanged; no wiring touched.
+
+## GT-139 FL139-08 Firebase login gates
+
+`node tests/run-tests.js` covers the Firebase migration behind the
+existing session contract: hand-rolled ID token verification (valid
+token passes; expired, wrong audience, wrong issuer, and tampered
+signature rejected, using a minted RS256 test token and an injected
+certificate fetcher), the bridge at `POST /api/auth/firebase` (GET is
+405, a bad token sets no cookies, a first login binds the cookie
+clinic, a returning Google account adopts its bound clinic by sub
+with a rotated key), the unchanged `/api/clinic` payload contract
+(`authenticated` and `logged_in` agree in anonymous, legacy-bound,
+and Firebase-bound states), and the page wiring (landing renders the
+provider redirect flow and posts to the bridge, dashboard stays gated
+on `logged_in`, `firebase-config.js` ships as a null placeholder with
+no invented values).
