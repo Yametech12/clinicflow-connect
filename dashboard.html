@@ -279,6 +279,10 @@
     font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:8px;
   }
   .footer-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .footer-top-right{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .footer-links{display:inline-flex;gap:8px}
+  .footer-links a{color:var(--teal);font-weight:600;display:inline-flex;align-items:center;min-height:44px;padding:0 8px}
+  .footer-links a:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   footer a{color:var(--teal);font-weight:600}
   @media (max-width:820px){
     .head-actions .topnote{display:none}
@@ -503,7 +507,7 @@
   <footer>
     <div class="footer-top">
       <div>ClinicFlow PH. Built for Philippine dental clinics.</div>
-      <div>Made by Mohammad Sidique Ibrahim</div>
+      <div class="footer-top-right"><span>Made by Mohammad Sidique Ibrahim</span><nav class="footer-links" aria-label="Legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav></div>
     </div>
     <div>Questions about your setup? Email us at <a href="mailto:epimetheus.support@gmail.com">epimetheus.support@gmail.com</a></div>
     <div>Your accounts stay yours. You can disconnect ClinicFlow anytime from your Facebook Settings and your Google Account permissions.</div>
