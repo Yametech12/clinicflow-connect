@@ -191,6 +191,13 @@ module.exports = async (req, res) => {
         ...sanitizeClinicSummary(updated, { includeSensitive: true }),
       });
     } catch (err) {
+      if (err && err.code === 'BODY_TOO_LARGE') {
+        return res.status(413).json({
+          status: 'error',
+          message:
+            'That save was too large to accept. Please shorten the clinic details and try again.',
+        });
+      }
       const ref = logServerError('clinic_post', err);
       return res.status(500).json({
         status: 'error',
