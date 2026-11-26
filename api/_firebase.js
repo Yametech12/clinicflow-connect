@@ -8,6 +8,7 @@
 // ClinicFlow project id constant below (GT-140 S5b), so Firebase login
 // is configured without any Vercel env change.
 const crypto = require('crypto');
+const { timedFetch } = require('./_http');
 
 const CERTS_URL =
   'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
@@ -37,7 +38,7 @@ async function fetchCerts() {
   if (certCache.certs && now - certCache.fetchedAt < CERT_CACHE_MS) {
     return certCache.certs;
   }
-  const response = await fetch(CERTS_URL);
+  const response = await timedFetch(CERTS_URL, {}, 10000);
   if (!response.ok) {
     throw new Error(`Could not load Firebase token certificates (HTTP ${response.status}).`);
   }

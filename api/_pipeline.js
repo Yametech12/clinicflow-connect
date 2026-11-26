@@ -2,6 +2,7 @@
 // Ported from ../clinicflow/Code.gs for multi-tenant Vercel serverless execution.
 const clinicStore = require('./_clinic');
 const { escapeHtml, logServerError } = require('./_session');
+const { timedFetch } = require('./_http');
 const {
   DEFAULT_DURATION_MINS,
   getManilaPromptDates,
@@ -114,14 +115,18 @@ async function callGeminiJson({ apiKey, model, systemPrompt, history, userText }
     },
   };
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': apiKey,
+  const response = await timedFetch(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify(requestBody),
     },
-    body: JSON.stringify(requestBody),
-  });
+    25000
+  );
 
   const rawText = await response.text();
   if (!response.ok) {
@@ -195,18 +200,23 @@ async function sendMessengerReply(pageAccessToken, recipientId, replyText) {
   if (!pageAccessToken) {
     throw new Error('Missing Facebook Page access token.');
   }
-  const url = `https://graph.facebook.com/v21.0/me/messages?access_token=${encodeURIComponent(
-    pageAccessToken
-  )}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_type: 'RESPONSE',
-      recipient: { id: String(recipientId) },
-      message: { text: String(replyText) },
-    }),
-  });
+  // Pro max: the Page token travels in the POST body, never in the URL
+  // query string, so it cannot land in request logs or referrers.
+  const url = 'https://graph.facebook.com/v21.0/me/messages';
+  const response = await timedFetch(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        access_token: pageAccessToken,
+        messaging_type: 'RESPONSE',
+        recipient: { id: String(recipientId) },
+        message: { text: String(replyText) },
+      }),
+    },
+    15000
+  );
   const text = await response.text();
   if (!response.ok) {
     throw new Error(`Meta Graph API HTTP ${response.status}: ${text.slice(0, 300)}`);
@@ -227,11 +237,15 @@ async function sendTelegramMessage(botToken, chatId, text, parseMode) {
     payload.parse_mode = parseMode;
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  const response = await timedFetch(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    15000
+  );
   const bodyText = await response.text();
   if (!response.ok) {
     throw new Error(`Telegram HTTP ${response.status}: ${bodyText.slice(0, 300)}`);
