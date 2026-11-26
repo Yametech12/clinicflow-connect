@@ -1376,6 +1376,35 @@ function assertEq(a, b, msg) {
     assertEq(okRes.statusCode, 200, 'health GET still works');
   });
 
+  // 28. GT-139 FL139-07: unknown clinic id rotates to a fresh session.
+  await test('session rotation FL139-07: GET with nonexistent clinic cookie issues a fresh server session', async () => {
+    const ghostId = 'cln_DOESNOTEXIST99';
+    const res = makeRes();
+    await clinicHandler(
+      makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: `cf_clinic=${ghostId}` } }),
+      res
+    );
+    assertEq(res.statusCode, 200, 'rotation response ok');
+    assert(res.body.clinic_id !== ghostId, 'caller-supplied id not echoed');
+    assertEq(res.body.session_issued, true, 'session_issued true after rotation');
+    assertEq(res.body.logged_in, false, 'rotated session is logged out');
+    const setCookie = res.headers['set-cookie'];
+    const cookieStr = Array.isArray(setCookie) ? setCookie.join(';') : String(setCookie || '');
+    assert(cookieStr.includes(`cf_clinic=${res.body.clinic_id}`), 'new clinic cookie issued');
+    assert(cookieStr.includes('cf_key='), 'new key cookie issued');
+    const meta = await clinicStore.getClinicSection(store, res.body.clinic_id, 'meta');
+    assert(meta && meta.keyHash, 'rotated session record exists server-side');
+    // A second read with the rotated pair is stable (no second rotation).
+    const issuedKey = decodeURIComponent(cookieStr.match(/cf_key=([^;]+)/)[1]);
+    const res2 = makeRes();
+    await clinicHandler(
+      makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https', cookie: `cf_clinic=${res.body.clinic_id}; cf_key=${issuedKey}` } }),
+      res2
+    );
+    assertEq(res2.body.clinic_id, res.body.clinic_id, 'rotated session is stable on re-read');
+    assertEq(res2.body.session_issued, false, 'no second rotation');
+  });
+
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - failed.length}/${results.length} tests passed`);
   if (failed.length) {

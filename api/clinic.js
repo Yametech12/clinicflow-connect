@@ -10,6 +10,11 @@ const {
   getClinicKeyFromRequest,
   verifyClinicKeyHash,
   ensureClinicSession,
+  createClinicId,
+  createClinicKey,
+  hashClinicKey,
+  setClinicCookie,
+  setClinicKeyCookie,
   readRequestBody,
   sanitizeClinicSummary,
   logServerError,
@@ -45,18 +50,46 @@ module.exports = async (req, res) => {
     }
 
     try {
-      const clinic = await clinicStore.getClinic(store, session.clinicId);
-      const includeSensitive = Boolean(session.hasValidKey);
+      let clinic = await clinicStore.getClinic(store, session.clinicId);
+      let effective = session;
+
+      // GT-139 FL139-07 (FN-3): a cf_clinic cookie naming a clinic that
+      // does not exist must not be echoed back as if it were a session.
+      // Rotate to a fresh server-issued session instead. Records that
+      // exist (including legacy records migrated on read) never rotate.
+      if (!clinic && !session.sessionIssued) {
+        const newId = createClinicId();
+        const newKey = createClinicKey();
+        const nowIso = new Date().toISOString();
+        await clinicStore.saveClinicSection(store, newId, 'meta', {
+          clinicId: newId,
+          keyHash: hashClinicKey(newKey),
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+        setClinicCookie(req, res, newId);
+        setClinicKeyCookie(req, res, newKey);
+        effective = {
+          clinicId: newId,
+          clinicKey: newKey,
+          hasValidKey: true,
+          recordHasKeyHash: true,
+          sessionIssued: true,
+        };
+        clinic = await clinicStore.getClinic(store, newId);
+      }
+
+      const includeSensitive = Boolean(effective.hasValidKey);
       const loggedIn = Boolean(clinic && clinic.google && clinic.google.googleSub);
 
       return res.status(200).json({
         status: 'ok',
         storage_configured: true,
-        session_issued: session.sessionIssued,
+        session_issued: effective.sessionIssued,
         authenticated: loggedIn,
         logged_in: loggedIn,
         ready,
-        ...sanitizeClinicSummary(clinic || { clinicId: session.clinicId }, { includeSensitive }),
+        ...sanitizeClinicSummary(clinic || { clinicId: effective.clinicId }, { includeSensitive }),
       });
     } catch (err) {
       const ref = logServerError('clinic_get', err);
