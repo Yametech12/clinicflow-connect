@@ -1878,6 +1878,213 @@ function assertEq(a, b, msg) {
     assert(html.includes('id="clinicSheetId" maxlength="500"'), 'sheet input capped at 500');
   });
 
+  // 47. GT-141 D4: verifier production shape. Production feeds the
+  // verifier X.509 CERTIFICATE PEM strings from Google's certs
+  // endpoint; the older gates inject SPKI public keys. The fixture
+  // below is a throwaway self-signed cert and its matching private
+  // key, generated with openssl for this suite only. They protect
+  // nothing and must never be used outside these tests.
+  await test('firebase verify GT-141 D4: X.509 certificate PEM verifies, cert/key mismatch rejected', async () => {
+    const CERT_PEM = [
+      '-----BEGIN CERTIFICATE-----',
+      'MIIDJzCCAg+gAwIBAgIUVYwZml27l7wMwxdMnDpNsUd69QAwDQYJKoZIhvcNAQEL',
+      'BQAwIjEgMB4GA1UEAwwXY2xpbmljZmxvdy10ZXN0LWZpeHR1cmUwIBcNMjYxMTI2',
+      'MDQwODM0WhgPMjEyNjExMDIwNDA4MzRaMCIxIDAeBgNVBAMMF2NsaW5pY2Zsb3ct',
+      'dGVzdC1maXh0dXJlMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxnLQ',
+      'FLpQbxTBk1QS7zoDAdTzV/c2IXARQdU2Doi8SJ7ZvEO1LMJRSFVVu3GYhZjFNSr5',
+      'DgphTC47+Ymd8YbMw1Ob85Br3mj1dVpVcOeNVZp3hngeLvmTXJ998uOJujoHtfdL',
+      'Q69DtUYkfq34yXniADh2q3xN39A6u5/VmH4T0Qiszg28775oKXj6MkwjqKx2/l7d',
+      'dozVE28gOCHsruhNWYbw21Bneanzd3aDapDOxQoPbaPQKNIBv6aAVDdnHxOlK/fL',
+      'Yc2ECiQp6uy1pIoeW89M/Ju92yAUEAoQZzFfsMr+bfSUrxnXpZHqRVkT/MDZOrV0',
+      '4cBbLrXW6unC/MnDZwIDAQABo1MwUTAdBgNVHQ4EFgQUVuKbCQ+whW+kbGJHkabI',
+      'BhEtW5EwHwYDVR0jBBgwFoAUVuKbCQ+whW+kbGJHkabIBhEtW5EwDwYDVR0TAQH/',
+      'BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAsnrcW9O99mVGw12X/+OJwESr6erp',
+      '4jwppxSL2rz3rw27xCuv3ZQgZsLprt+ivyCUfVQFbzCM+PRKIO1Yr3CpdyFNLEQm',
+      'hGgd0v1asy0B0fFQF86e/BZo9FXxCfJtZwMVHFVluj+CAKKIdUNowMJ9N3oU3wB1',
+      'mN1k4pBflmpG+O6ztUjExJ6sLdBOaAr0VdckV97vhXNhq/FluGI2cueeRhTx+0sj',
+      'emxZpmo8L41xsZIyaY+QK4HXT9csukeq7+oklzZ7KMjxQ+f2vn9WJvORxfhRr/JR',
+      'GF7T10n+PMq5SgQXzHkfOGlk5UvJ0F65kEAD1xf+ZsjyUfk6LzsGyypkYA==',
+      '-----END CERTIFICATE-----',
+    ].join('\n');
+    const CERT_KEY_PEM = [
+      '-----BEGIN PRIVATE KEY-----',
+      'MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDGctAUulBvFMGT',
+      'VBLvOgMB1PNX9zYhcBFB1TYOiLxIntm8Q7UswlFIVVW7cZiFmMU1KvkOCmFMLjv5',
+      'iZ3xhszDU5vzkGveaPV1WlVw541VmneGeB4u+ZNcn33y44m6Oge190tDr0O1RiR+',
+      'rfjJeeIAOHarfE3f0Dq7n9WYfhPRCKzODbzvvmgpePoyTCOorHb+Xt12jNUTbyA4',
+      'Ieyu6E1ZhvDbUGd5qfN3doNqkM7FCg9to9Ao0gG/poBUN2cfE6Ur98thzYQKJCnq',
+      '7LWkih5bz0z8m73bIBQQChBnMV+wyv5t9JSvGdelkepFWRP8wNk6tXThwFsutdbq',
+      '6cL8ycNnAgMBAAECggEAXWcgpQDkZsQAMFW767kEPVJ7joWehrJ2jOPLY5/b7tpF',
+      'ZSUBGyYCl+cCSQ04WnkDKPkm7ALatL52IAczvcBSlATAPC1XeAEytp9j45Y4oXfo',
+      'lfPnUPjK8SdoYm/SHUK+6liQpjTRy3pOJwm/NSUWyD/LKv+Ar70UR8b9A58juJhm',
+      'Rzq3FuVe/IiVKmONYEVt4yyNgDXm6emSXKE7k8GsILn9CoZtSlpd+k8dPm025wD3',
+      'ARL3fLOKZTwoyFMPYiDm8XU+Uufbg9RzXVx6ybBKNF1ZVcMZefOG4bpy4y0ywvoT',
+      '6icVpL/dJXRqjWxaotCA0KrdeRaPqXzC3K9gjOW00QKBgQDr/yawjMrebn/jUGop',
+      'NbulHr1eDm7K+8PEFfoKV4V26f0kPAxRCdJLY1pl+CoipQ4gcbkmaqUjjCQWgQYy',
+      'TgBZrfcLAe+2eHBXN7QKxNPkZSt6ak88ePDZJtTcGiSqfO0usNrLr4tepuOv7J8Z',
+      'pLGXTkMJouViB98FpwtS1A9xzQKBgQDXROkFXlmFTKERz80IaOzReF4NUXtY67IY',
+      'vdIZ1ryWT+JBTlGu9G9MamFVuEs9j1hauaOEUNkzte+/hPsha3Cabp1Ppvkna34m',
+      'YAfRDJogOu4jDH55NVOoOAYCaKLCcmLofDmjuB7MV42UFHLvepNApwSI/ZblbqQf',
+      'WXYwUZMmAwKBgB1D28li/DlPHJ7UtwV7O1TDlhoW0hhr1h/31bT4m31ekNywcZqP',
+      'DDv7CxfACYGYVEMjtyETcn0RANyljV4pnBOC5jLAP7iyAMRgDPyU4e3dueGJU2Ad',
+      'Y0iabyUIPOnDaiozFj7R+wd2zJ9hSW2FpdwsgVWtlKJudXKe/2F7GJs1AoGBAJL/',
+      'K1/PHbI4sYRIMeocPBqN5yuRCHmf+O2MMXwTdpPt2MJfiMe/goDb47t1LWvMBrlt',
+      'Kouf6bG1+xD87b/UbgAGqMVLb7fLX0k1KiFGSbjYhOTKE1MRZx7norLiYMIG+iNn',
+      'MLTrdZxz7OnBTPra6NKtOhuRjwj8lHYT0PENwz2hAoGBAKoX2gkYmkKkoT4cOlhh',
+      '1pry4i7uAWtecmAY903xJJRtI/6rI4jBQoUyb/Ke560FxwMlUgyEcWG2ckCrQ2nb',
+      '9GZasef/Mjp8Hi0yG3iiNTDPmFUV/kKnF1A9U55mKMGaWOvjJAwzELOl8V0TeavO',
+      '+pJdnTy1vtnXGL1LPZJ51oxk',
+      '-----END PRIVATE KEY-----',
+    ].join('\n');
+    firebaseAuth._setCertFetcherForTests(async () => ({ certkid: CERT_PEM }));
+    const projectId = 'clinicflow-test-project';
+    const mintWith = (keyPem, overrides = {}) => {
+      const now = Math.floor(Date.now() / 1000);
+      const header = { alg: 'RS256', kid: 'certkid', typ: 'JWT' };
+      const payload = {
+        iss: `https://securetoken.google.com/${projectId}`,
+        aud: projectId,
+        sub: 'uid_cert_1',
+        iat: now - 10,
+        exp: now + 3600,
+        email: 'cert.owner@example.com',
+        firebase: { identities: { 'google.com': ['sub_cert_1'] }, sign_in_provider: 'google.com' },
+        ...overrides,
+      };
+      const enc = (o) => Buffer.from(JSON.stringify(o), 'utf8').toString('base64url');
+      const data = `${enc(header)}.${enc(payload)}`;
+      const sig = crypto.sign('RSA-SHA256', Buffer.from(data, 'utf8'), keyPem).toString('base64url');
+      return `${data}.${sig}`;
+    };
+    const mintCert = (overrides = {}) => mintWith(CERT_KEY_PEM, overrides);
+    const claims = await firebaseAuth.verifyFirebaseIdToken(mintCert());
+    assertEq(claims.uid, 'uid_cert_1', 'uid returned for a certificate-PEM verified token');
+    assertEq(claims.googleSub, 'sub_cert_1', 'google sub returned for certificate shape');
+    const otherPair = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const otherKeyPem = otherPair.privateKey.export({ type: 'pkcs8', format: 'pem' });
+    let mismatchRejected = false;
+    try {
+      await firebaseAuth.verifyFirebaseIdToken(mintWith(otherKeyPem));
+    } catch (e) {
+      mismatchRejected = true;
+    }
+    assert(mismatchRejected, 'token signed by a different key is rejected against the certificate');
+    global.__mintFirebaseCert = mintCert;
+  });
+
+  // 48. GT-141 gate 2: bridge setup_pending when the store is
+  // unconfigured (adapter unset, KV env absent). Env is saved and
+  // restored around the call, and the test adapter is reinstalled.
+  await test('firebase bridge GT-141: setup_pending when store unconfigured, 200 and no cookies', async () => {
+    const envKeys = ['KV_REST_API_URL', 'KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN', 'CLINICFLOW_LOCAL_STORE_FILE'];
+    const savedEnv = {};
+    for (const k of envKeys) {
+      savedEnv[k] = process.env[k];
+      delete process.env[k];
+    }
+    store._setAdapterForTests(null);
+    try {
+      const res = makeRes();
+      await firebaseBridge(
+        makeReq({
+          method: 'POST',
+          headers: { host: 'x.example', 'x-forwarded-proto': 'https' },
+          body: { id_token: 'anything' },
+        }),
+        res
+      );
+      assertEq(res.statusCode, 200, 'setup_pending status is 200');
+      assertEq(res.body.status, 'setup_pending', 'setup_pending body status');
+      assertEq(res.headers['set-cookie'], undefined, 'setup_pending sets no cookies');
+    } finally {
+      store._setAdapterForTests(adapter);
+      for (const k of envKeys) {
+        if (savedEnv[k] === undefined) delete process.env[k];
+        else process.env[k] = savedEnv[k];
+      }
+    }
+  });
+
+  // 49. GT-141 gate 3: bridge forbidden gate. The cookie clinic has a
+  // keyHash, the request carries a wrong cf_key, and the token is
+  // valid but bound to nobody: 403 INVALID_SESSION, no auth written.
+  await test('firebase bridge GT-141: forbidden gate, wrong cf_key with unbound valid token -> 403, no auth written', async () => {
+    const mint = global.__mintFirebaseCert;
+    assert(mint, 'certificate mint helper available');
+    const { clinicId } = await seedClinic();
+    const token = mint({
+      sub: 'uid_gt141_fresh',
+      firebase: { identities: { 'google.com': ['sub_gt141_fresh'] }, sign_in_provider: 'google.com' },
+    });
+    const res = makeRes();
+    await firebaseBridge(
+      makeReq({
+        method: 'POST',
+        headers: {
+          host: 'x.example', 'x-forwarded-proto': 'https',
+          cookie: `cf_clinic=${clinicId}; cf_key=${session.createClinicKey()}`,
+        },
+        body: { id_token: token },
+      }),
+      res
+    );
+    assertEq(res.statusCode, 403, 'forbidden status');
+    assertEq(res.body.code, 'INVALID_SESSION', 'forbidden code');
+    assertEq(await clinicStore.getClinicSection(store, clinicId, 'auth'), null, 'no auth section written for the gated clinic');
+  });
+
+  // 50. GT-141 gate 4: bridge outcome logging. A bad-token POST emits
+  // a structured invalid_token outcome line that never contains the
+  // token string.
+  await test('firebase bridge GT-141: invalid_token outcome logged, token never in the log line', async () => {
+    const token = 'bad.token.value-GT141SECRET';
+    const lines = [];
+    const origError = console.error;
+    console.error = (...args) => {
+      lines.push(args.map((a) => String(a)).join(' '));
+    };
+    let res;
+    try {
+      res = makeRes();
+      await firebaseBridge(
+        makeReq({
+          method: 'POST',
+          headers: { host: 'x.example', 'x-forwarded-proto': 'https' },
+          body: { id_token: token },
+        }),
+        res
+      );
+    } finally {
+      console.error = origError;
+    }
+    assertEq(res.statusCode, 401, 'bad token status');
+    const outcomeLines = lines.filter((l) => l.includes('[clinicflow][auth_firebase_outcome]'));
+    assert(outcomeLines.some((l) => l.includes('invalid_token')), 'invalid_token outcome line emitted, got: ' + lines.join(' | '));
+    assert(!lines.join('\n').includes(token), 'log lines never contain the token string');
+    assert(!lines.join('\n').includes('GT141SECRET'), 'log lines never contain a token fragment');
+  });
+
+  // 51. GT-141 gate 5: static gates on index.html. Assertions target
+  // mechanism identifiers, not banner copy, so wording refactors do
+  // not break them but removing the mechanism does.
+  await test('firebase client GT-141: watchdog armed with pagehide disarm, withTimeout on redirect result, data.message read', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    assert(html.includes('FB_NAV_WATCHDOG_MS'), 'navigation watchdog constant present');
+    assert(html.includes('pagehide'), 'pagehide disarm present');
+    const start = html.indexOf('function handleFirebaseReturn');
+    const end = html.indexOf('handleFirebaseReturn();', start);
+    assert(start !== -1 && end > start, 'firebase return handler located');
+    const region = html.slice(start, end);
+    assert(/withTimeout\([\s\S]{0,90}getRedirectResult/.test(region), 'withTimeout wraps the getRedirectResult call');
+    assert(region.includes('data.message'), 'return handler reads data.message from the bridge response');
+    const startFnAt = html.indexOf('function startFirebaseLogin');
+    const startFn = html.slice(startFnAt, startFnAt + 1200);
+    assert(startFn.includes('armFbNavWatchdog'), 'start path arms the navigation watchdog');
+    assert(/withTimeout\(loadFirebaseAuth\(\)/.test(startFn), 'start path bounds the SDK load with withTimeout');
+  });
+
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - failed.length}/${results.length} tests passed`);
   if (failed.length) {
