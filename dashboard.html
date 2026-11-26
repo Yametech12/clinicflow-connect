@@ -256,7 +256,7 @@
   .bookings-note{font-size:14px;color:var(--muted)}
   .bookings-note .dot{margin-right:8px}
   .bookings-list{list-style:none}
-  .booking-row{padding:8px 12px;border-bottom:1px solid var(--line)}
+  .booking-row{padding:8px 12px 8px 0;border-bottom:1px solid var(--line)}
   .booking-row:last-child{border-bottom:none}
   .booking-main{font-size:14px}
   .booking-meta{font-size:12px;color:var(--muted);margin-top:2px}
@@ -380,8 +380,8 @@
         <p class="cardbody">Connect your clinic Page so ClinicFlow can read and reply to patient messages on Messenger for you.</p>
         <p class="safety-line">Safe: you sign in on Facebook's own page. ClinicFlow never sees your password, and you can remove access anytime in Facebook Settings.</p>
         <span class="pill checking" data-pill>Checking status</span>
-        <button class="connect" data-connect="facebook">Connect Facebook Page</button>
         <p class="cardmsg" data-msg aria-live="polite"></p>
+        <button class="connect" data-connect="facebook">Connect Facebook Page</button>
       </div>
 
       <div class="card" id="card-google">
@@ -390,8 +390,8 @@
         <p class="cardbody">Connect Google so each booking is written into a sheet you own and added to your calendar.</p>
         <p class="safety-line">Safe: you sign in on Google's own page. The booking sheet and calendar are created inside your Google account, and you can remove access anytime in your Google Account settings.</p>
         <span class="pill checking" data-pill>Checking status</span>
-        <button class="connect" data-connect="google">Connect Google</button>
         <p class="cardmsg" data-msg aria-live="polite"></p>
+        <button class="connect" data-connect="google">Connect Google</button>
       </div>
 
       <div class="card" id="card-telegram">
@@ -404,8 +404,8 @@
           <div class="code" data-tgcode></div>
           <p data-tgtext></p>
         </div>
-        <button class="connect" data-connect="telegram">Connect Telegram</button>
         <p class="cardmsg" data-msg aria-live="polite"></p>
+        <button class="connect" data-connect="telegram">Connect Telegram</button>
       </div>
     </div>
   </section>
