@@ -1,5 +1,6 @@
 // ClinicFlow Connect: Google OAuth token refresh, Sheets, and Calendar helpers.
 const clinicStore = require('./_clinic');
+const { timedFetch } = require('./_http');
 
 const TIMEZONE = 'Asia/Manila';
 const DEFAULT_DURATION_MINS = 45;
@@ -138,7 +139,7 @@ function extractSpreadsheetId(input) {
 }
 
 async function googleFetchJson(url, options = {}) {
-  const response = await fetch(url, options);
+  const response = await timedFetch(url, options, 15000);
   const text = await response.text();
   let data;
   try {

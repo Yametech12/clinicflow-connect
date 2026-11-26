@@ -6,6 +6,7 @@
 // and an in-memory adapter override for automated tests.
 const fs = require('fs');
 const path = require('path');
+const { timedFetch } = require('./_http');
 
 class StoreNotConfiguredError extends Error {
   constructor(message) {
@@ -69,14 +70,18 @@ async function runKvCommand(command) {
     );
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
+  const response = await timedFetch(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(command),
     },
-    body: JSON.stringify(command),
-  });
+    10000
+  );
 
   const text = await response.text();
   let parsed;

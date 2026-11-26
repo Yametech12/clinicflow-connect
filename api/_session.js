@@ -306,6 +306,9 @@ async function readRequestBody(req) {
     const rawStr = Buffer.isBuffer(req.body)
       ? req.body.toString('utf8')
       : String(req.body);
+    if (Buffer.byteLength(rawStr, 'utf8') > MAX_REQUEST_BODY_BYTES) {
+      throw bodyTooLargeError();
+    }
     return parseRawBody(rawStr, req.headers && req.headers['content-type']);
   }
 
@@ -315,12 +318,34 @@ async function readRequestBody(req) {
 
   const raw = await new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    let total = 0;
+    req.on('data', (chunk) => {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      total += buf.length;
+      if (total > MAX_REQUEST_BODY_BYTES) {
+        if (typeof req.destroy === 'function') req.destroy();
+        reject(bodyTooLargeError());
+        return;
+      }
+      chunks.push(buf);
+    });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
 
   return parseRawBody(raw, req.headers && req.headers['content-type']);
+}
+
+// Pro max: profile saves, Firebase token posts, and Facebook Page
+// selection bodies are small (a few KB). Cap streamed and raw bodies at
+// 1 MB so a huge POST cannot be buffered without a bound. Callers map
+// the BODY_TOO_LARGE code to 413; anything else stays a 500.
+const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+
+function bodyTooLargeError() {
+  const err = new Error(`Request body exceeded ${MAX_REQUEST_BODY_BYTES} bytes.`);
+  err.code = 'BODY_TOO_LARGE';
+  return err;
 }
 
 function parseRawBody(raw, contentType) {
@@ -480,6 +505,7 @@ module.exports = {
   verifyState,
   consumeSingleUseState,
   readRequestBody,
+  MAX_REQUEST_BODY_BYTES,
   parseRawBody,
   wantsHtml,
   escapeHtml,

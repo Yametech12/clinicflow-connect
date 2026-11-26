@@ -128,6 +128,11 @@ the server-side proof. Since GT-136:
   the Recent bookings panel fed by `api/bookings.js`.
 - `api/_store.js`: swappable KV storage layer (`get`, `put`, `putIfAbsent`,
   `del`, `isConfigured`, `getBackendInfo`).
+- `api/_http.js`: `timedFetch` (pro max): every outbound provider call
+  carries a hard timeout (KV 10s, Google 15s, Gemini 25s, Messenger and
+  Telegram 15s, Firebase certs 10s), Node built-ins only.
+- `PRO_MAX.md`: the Nov 26, 2026 pro max audit, prioritized plan, changes,
+  and items awaiting owner approval.
 - `api/_clinic.js`: per-section clinic read/write helpers, legacy migration,
   and the `clinicByGoogleSub:<sub>` login identity index helpers.
 - `api/_session.js`: `cf_clinic` + `cf_key` HttpOnly cookies, HMAC-signed
