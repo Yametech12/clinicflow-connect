@@ -127,7 +127,7 @@
     font-size:14px;font-weight:600;align-items:center;gap:12px;flex-wrap:wrap;
   }
   .login-banner.show{display:flex}
-  .hero{padding:40px 0 30px;border-bottom:1px solid var(--line)}
+  .hero{padding:32px 0 24px;border-bottom:1px solid var(--line)}
   .kicker{font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:14px}
   .kicker::before{content:"";display:inline-block;width:8px;height:8px;background:var(--teal);margin-right:10px;vertical-align:1px}
   h1{font-family:Georgia,"Times New Roman",serif;font-size:44px;line-height:1.12;font-weight:700;max-width:680px}
@@ -166,7 +166,7 @@
   h2{font-family:Georgia,"Times New Roman",serif;font-size:24px;margin-bottom:6px}
   .sub{color:var(--muted);font-size:14px;max-width:640px}
   .demo-panel{
-    margin-top:16px;border:1px solid var(--line);border-top:2px solid var(--rule);background:var(--card);
+    margin-top:12px;border:1px solid var(--line);border-top:2px solid var(--rule);background:var(--card);
     padding:20px 22px;display:grid;grid-template-columns:1fr 1.15fr;gap:22px;align-items:start;
   }
   @media (min-width:821px){
@@ -203,6 +203,10 @@
   button.savebtn:hover{background:var(--save-hover)}
   button.savebtn:active{background:var(--save-hover)}
   button.savebtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .demo-panel button.savebtn{background:var(--teal);color:var(--btn-text)}
+  .demo-panel button.savebtn:hover,.demo-panel button.savebtn:active{background:var(--teal-dark)}
+  .demo-jump{display:inline-flex;align-items:center;min-height:48px;padding:0 8px;margin-left:8px;font-size:14px;font-weight:600;color:var(--teal)}
+  .demo-jump:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .phone-mock{
     border:2px solid var(--rule);border-radius:14px;background:var(--chat-bg);overflow:hidden;
   }
@@ -304,7 +308,7 @@
     <p class="lede lede2">
       Built for independent dental clinics, from solo practice to a few branches. It runs on the Facebook Page, Google account, and phone you already have. No new equipment, no software to install.
     </p>
-    <button class="herobtn" type="button" data-login>Start a pilot</button>
+    <button class="herobtn" type="button" data-login>Start a pilot</button><a class="demo-jump" href="#demo">See the demo</a>
     <p class="cta-note">Pilot setup is ₱5,500 one time. Logging in is free, and you pay only when you confirm your pilot.</p>
     <div class="trustrow">
       <span class="titem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Your accounts stay under your name</span>

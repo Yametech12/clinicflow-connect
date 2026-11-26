@@ -1318,6 +1318,31 @@ function assertEq(a, b, msg) {
     assert(!/\.pill[^{]*\{[^}]*var\(--green-bg\)/.test(html), 'pill no longer consumes green-bg fill');
   });
 
+  // 25. GT-139 FL139-04: improvement moves 1 to 4 gate.
+  await test('improvement gate FL139-04: hero demo up 18px, teal demo buttons, demo anchor, next-action strings', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const idx = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    const dash = fs.readFileSync(path.join(__dirname, '..', 'dashboard.html'), 'utf8');
+    assert(idx.includes('.hero{padding:32px 0 24px'), 'hero padding tightened');
+    assert(idx.includes('margin-top:12px;border:1px solid var(--line);border-top:2px solid var(--rule);background:var(--card)'), 'demo panel margin 12px');
+    assert(idx.includes('.demo-panel button.savebtn{background:var(--teal);color:var(--btn-text)}'), 'demo buttons teal');
+    assert(idx.includes('.demo-panel button.savebtn:hover,.demo-panel button.savebtn:active{background:var(--teal-dark)}'), 'demo buttons teal hover');
+    assert(idx.includes('<a class="demo-jump" href="#demo">See the demo</a>'), 'See the demo anchor present');
+    assert(idx.includes('.demo-jump:focus-visible{outline:2px solid var(--teal);outline-offset:2px}'), 'demo anchor focus rule');
+    assert(dash.includes('<div class="next-action" id="nextAction" role="status"></div>'), 'next-action element present');
+    assert(dash.includes('.next-action:empty{display:none}'), 'empty next-action hidden');
+    for (const s of [
+      'Next step: Step 1, save your clinic profile.',
+      'Next step: Step 2, connect Facebook.',
+      'Next step: Step 3, connect Google.',
+      'Next step: Step 4, link Telegram.',
+      'All four steps done. Your bot is live.',
+    ]) {
+      assert(dash.includes(s), 'next-action string present: ' + s);
+    }
+  });
+
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - failed.length}/${results.length} tests passed`);
   if (failed.length) {

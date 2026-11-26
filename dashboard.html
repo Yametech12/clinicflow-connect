@@ -140,6 +140,8 @@
   }
   section{padding:36px 0 0;scroll-margin-top:76px}
   section#profile .stepnum{margin-bottom:6px}
+  .next-action{margin:12px 0 0;padding:8px 11px;border:1px solid var(--teal);border-radius:2px;background:transparent;font-size:14px;font-weight:700;color:var(--ink)}
+  .next-action:empty{display:none}
   h2{font-family:Georgia,"Times New Roman",serif;font-size:24px;margin-bottom:6px}
   .sub{color:var(--muted);font-size:14px;max-width:640px}
   .sub + .sub{margin-top:8px}
@@ -337,6 +339,8 @@
   <h1 class="dash-h1">Your clinic dashboard</h1>
 
   <div class="welcomebox" id="welcomeBox">Welcome to your ClinicFlow dashboard. Four steps turn your bot on: save your clinic profile, connect Facebook, connect Google, then link Telegram. Start with Step 2 on the Facebook card below once your profile is saved; the bot starts answering as soon as Facebook and Google are both connected.</div>
+
+  <div class="next-action" id="nextAction" role="status"></div>
 
   <section id="profile">
     <div class="stepnum">STEP 1</div>
@@ -563,6 +567,15 @@
 
     var countEl = document.getElementById('progressCount');
     if (countEl) countEl.textContent = doneCount + ' of 4 done';
+
+    var nextAction = document.getElementById('nextAction');
+    if (nextAction) {
+      if (!profileDone) nextAction.textContent = 'Next step: Step 1, save your clinic profile.';
+      else if (!fbDone) nextAction.textContent = 'Next step: Step 2, connect Facebook.';
+      else if (!ggDone) nextAction.textContent = 'Next step: Step 3, connect Google.';
+      else if (!tgDone) nextAction.textContent = 'Next step: Step 4, link Telegram.';
+      else nextAction.textContent = 'All four steps done. Your bot is live.';
+    }
 
     var connCount = (fbDone ? 1 : 0) + (ggDone ? 1 : 0) + (tgDone ? 1 : 0);
     var summaryEl = document.getElementById('statusSummary');
