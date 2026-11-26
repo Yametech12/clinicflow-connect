@@ -2072,7 +2072,18 @@ function assertEq(a, b, msg) {
     const path = require('path');
     const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
     assert(html.includes('FB_NAV_WATCHDOG_MS'), 'navigation watchdog constant present');
+    assert(html.includes('FB_NAV_WATCHDOG_MS = 15000'), 'navigation watchdog window is 15000ms');
     assert(html.includes('pagehide'), 'pagehide disarm present');
+    // GT-141 round 2 M1: the hide disarm is suspend plus re-arm, not
+    // one-way. The attempt counter and the re-arm path must exist.
+    assert(html.includes('fbLoginAttemptCounter'), 'per-attempt counter present (M2 guard)');
+    assert(html.includes('isCurrentAttempt'), 'attempt currency guard present (M2)');
+    assert(html.includes('rearmFbNavWatchdog'), 'watchdog re-arm path present (M1)');
+    assert(html.includes('suspendFbNavWatchdog'), 'watchdog suspend on hide present (M1)');
+    assert(html.includes('onFbWatchdogPageShow'), 'pageshow re-arm handler present (M1)');
+    assert(html.includes("addEventListener('pageshow'"), 'pageshow listener registered (M1)');
+    assert(html.includes('onFbWatchdogVisibilityChange'), 'visibilitychange handler present (M1)');
+    assert(html.includes('fbLoginInFlight'), 'in-flight attempt tracking present (M1)');
     const start = html.indexOf('function handleFirebaseReturn');
     const end = html.indexOf('handleFirebaseReturn();', start);
     assert(start !== -1 && end > start, 'firebase return handler located');

@@ -33,7 +33,9 @@ const { getFirebaseProjectId, verifyFirebaseIdToken } = require('../_firebase');
 // cookie values here. Success stays unlogged.
 function logAuthOutcome(outcome, reason) {
   const detail = { outcome };
-  if (reason) detail.reason = String(reason);
+  // GT-141 round 2: cap the reason so a future verifier message can
+  // never write an unbounded or interpolated value into the log.
+  if (reason) detail.reason = String(reason).slice(0, 120);
   console.error(`[clinicflow][auth_firebase_outcome] ${JSON.stringify(detail)}`);
 }
 
