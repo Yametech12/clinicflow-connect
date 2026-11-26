@@ -1343,6 +1343,19 @@ function assertEq(a, b, msg) {
     }
   });
 
+  // 26. GT-139 FL139-05: 360px progress bar gate (static shape; rendered
+  // acceptance measured by the builder and re-measured by Fresh-Eye).
+  await test('progress bar gate FL139-05: narrow-width wrap rule present, anchors keep 44px rule', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'dashboard.html'), 'utf8');
+    assert(html.includes('@media (max-width:480px)'), '480px breakpoint present');
+    const block = html.slice(html.indexOf('@media (max-width:480px)'));
+    assert(block.includes('.progress-inner{flex-wrap:wrap}'), 'count wraps to its own line');
+    assert(block.includes('.progress-segments{min-width:0;flex:1 1 100%'), 'segments take the full row and can shrink');
+    assert(html.includes('a.seg{text-decoration:none;cursor:pointer;min-height:44px'), 'segment anchors keep the 44px rule');
+  });
+
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - failed.length}/${results.length} tests passed`);
   if (failed.length) {
