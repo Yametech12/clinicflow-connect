@@ -37,6 +37,7 @@ module.exports = async (req, res) => {
         status: 'storage_pending',
         storage_configured: false,
         session_issued: session.sessionIssued,
+        authenticated: false,
         logged_in: false,
         ready,
         ...sanitizeClinicSummary({ clinicId: session.clinicId }, { includeSensitive: false }),
@@ -46,13 +47,14 @@ module.exports = async (req, res) => {
     try {
       const clinic = await clinicStore.getClinic(store, session.clinicId);
       const includeSensitive = Boolean(session.hasValidKey);
+      const loggedIn = Boolean(clinic && clinic.google && clinic.google.googleSub);
 
       return res.status(200).json({
         status: 'ok',
         storage_configured: true,
         session_issued: session.sessionIssued,
-        authenticated: includeSensitive,
-        logged_in: Boolean(clinic && clinic.google && clinic.google.googleSub),
+        authenticated: loggedIn,
+        logged_in: loggedIn,
         ready,
         ...sanitizeClinicSummary(clinic || { clinicId: session.clinicId }, { includeSensitive }),
       });
