@@ -13,26 +13,74 @@ const store = require('./_store');
 const { logServerError, timingSafeStringEqual } = require('./_session');
 const { processMessengerEvent, handleTelegramUpdate } = require('./_pipeline');
 
+// Pro max: Meta and Telegram payloads are small (a few KB). A body over
+// 1 MB cannot be a real event, so refuse it instead of buffering it
+// without a bound. Oversize signed payloads are ignored with a logged
+// 200, the same policy as unparseable payloads, so no retry storm.
+const MAX_WEBHOOK_BODY_BYTES = 1024 * 1024;
+// Pro max: a single Meta batch can carry many events. Run them in
+// chunks of 5 so one batch cannot fan out an unbounded burst of
+// Gemini calls in parallel.
+const MAX_CONCURRENT_EVENTS = 5;
+
+function bodyTooLargeError(bytes) {
+  const err = new Error(`Webhook body exceeded ${MAX_WEBHOOK_BODY_BYTES} bytes (${bytes}).`);
+  err.code = 'BODY_TOO_LARGE';
+  return err;
+}
+
 async function readRawBodyBuffer(req) {
   if (Buffer.isBuffer(req.rawBody)) {
+    if (req.rawBody.length > MAX_WEBHOOK_BODY_BYTES) {
+      throw bodyTooLargeError(req.rawBody.length);
+    }
     return req.rawBody;
   }
   if (typeof req.rawBody === 'string') {
-    return Buffer.from(req.rawBody, 'utf8');
+    const buf = Buffer.from(req.rawBody, 'utf8');
+    if (buf.length > MAX_WEBHOOK_BODY_BYTES) {
+      throw bodyTooLargeError(buf.length);
+    }
+    return buf;
   }
   // If the platform already materialized the body (its JSON parser stayed
   // active), use it instead of consuming a possibly drained stream.
   if (req.body !== undefined && req.body !== null) {
-    if (Buffer.isBuffer(req.body)) return req.body;
-    if (typeof req.body === 'string') return Buffer.from(req.body, 'utf8');
+    if (Buffer.isBuffer(req.body)) {
+      if (req.body.length > MAX_WEBHOOK_BODY_BYTES) {
+        throw bodyTooLargeError(req.body.length);
+      }
+      return req.body;
+    }
+    if (typeof req.body === 'string') {
+      const buf = Buffer.from(req.body, 'utf8');
+      if (buf.length > MAX_WEBHOOK_BODY_BYTES) {
+        throw bodyTooLargeError(buf.length);
+      }
+      return buf;
+    }
     if (typeof req.body === 'object' && Object.keys(req.body).length > 0) {
-      return Buffer.from(JSON.stringify(req.body), 'utf8');
+      const buf = Buffer.from(JSON.stringify(req.body), 'utf8');
+      if (buf.length > MAX_WEBHOOK_BODY_BYTES) {
+        throw bodyTooLargeError(buf.length);
+      }
+      return buf;
     }
   }
   if (typeof req.on === 'function') {
     return new Promise((resolve, reject) => {
       const chunks = [];
-      req.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+      let total = 0;
+      req.on('data', (chunk) => {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        total += buf.length;
+        if (total > MAX_WEBHOOK_BODY_BYTES) {
+          if (typeof req.destroy === 'function') req.destroy();
+          reject(bodyTooLargeError(total));
+          return;
+        }
+        chunks.push(buf);
+      });
       req.on('end', () => resolve(Buffer.concat(chunks)));
       req.on('error', reject);
     });
@@ -86,7 +134,16 @@ const handler = async (req, res) => {
   }
 
   if (req.method === 'POST') {
-    const rawBuf = await readRawBodyBuffer(req);
+    let rawBuf;
+    try {
+      rawBuf = await readRawBodyBuffer(req);
+    } catch (err) {
+      if (err && err.code === 'BODY_TOO_LARGE') {
+        console.warn('[clinicflow] Ignored oversize webhook payload');
+        return res.status(200).send('EVENT_RECEIVED');
+      }
+      throw err;
+    }
     const appSecret = process.env.META_APP_SECRET;
     const signatureHeader = req.headers && req.headers['x-hub-signature-256'];
     const tgSecretHeader = req.headers && req.headers['x-telegram-bot-api-secret-token'];
@@ -139,7 +196,7 @@ const handler = async (req, res) => {
 
     // Path A: Meta Messenger Graph API webhook (signature verified if secret is configured)
     if (body && body.object === 'page' && Array.isArray(body.entry)) {
-      const tasks = [];
+      const jobs = [];
       for (const entry of body.entry) {
         const entryPageId = entry && entry.id ? String(entry.id) : '';
         const messaging = Array.isArray(entry && entry.messaging) ? entry.messaging : [];
@@ -159,22 +216,20 @@ const handler = async (req, res) => {
             continue;
           }
 
-          tasks.push(
-            processMessengerEvent({
-              pageId,
-              senderId,
-              messageId,
-              userText,
-              store,
-            }).catch((err) => {
-              const ref = logServerError('webhook_event', err);
-              return { status: 'error', ref };
-            })
-          );
+          jobs.push({ pageId, senderId, messageId, userText, store });
         }
       }
 
-      await Promise.all(tasks);
+      for (let i = 0; i < jobs.length; i += MAX_CONCURRENT_EVENTS) {
+        await Promise.all(
+          jobs.slice(i, i + MAX_CONCURRENT_EVENTS).map((job) =>
+            processMessengerEvent(job).catch((err) => {
+              const ref = logServerError('webhook_event', err);
+              return { status: 'error', ref };
+            })
+          )
+        );
+      }
       return res.status(200).send('EVENT_RECEIVED');
     }
 
