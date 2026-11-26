@@ -233,6 +233,12 @@
     .flash{animation:none}
     button.loginbtn,.herobtn,button.savebtn{transition:none}
   }
+  .demo-lang{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+  .demo-lang-label{font-size:12px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--muted)}
+  .demo-lang-btns{display:inline-flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+  .langbtn{min-height:44px;padding:10px 16px;font-size:14px;font-weight:600;font-family:inherit;background:var(--card);color:var(--muted);border:none;cursor:pointer}
+  .langbtn[aria-pressed="true"]{background:var(--teal);color:var(--btn-text)}
+  .langbtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .demo-bookbtn{margin-top:12px}
   .demo-alert{
     margin-top:12px;border:1px dashed var(--teal);background:var(--tg-bg);
@@ -338,17 +344,24 @@
         <button class="savebtn demo-bookbtn" type="button" id="demoBookBtn">See a booking happen</button>
       </div>
       <div>
+        <div class="demo-lang" role="group" aria-label="Demo language">
+          <span class="demo-lang-label">Demo language</span>
+          <div class="demo-lang-btns">
+            <button type="button" class="langbtn" data-lang="tl" aria-pressed="false">Tagalog</button>
+            <button type="button" class="langbtn" data-lang="bis" aria-pressed="true">Bisaya</button>
+          </div>
+        </div>
         <div class="phone-mock" aria-label="Sample Messenger preview">
           <div class="phone-head">BrightSmile Dental Clinic <span>Sample Messenger</span></div>
           <div class="chat-body">
-            <div class="bubble patient">Pila ang cleaning?</div>
+            <div class="bubble patient" id="demoPatientPrice">Pila ang cleaning?</div>
             <div class="bubble bot" id="demoBotReply">Hi po! Ang dental cleaning namin ay ₱1,500 po. Kung gusto ninyo mag-book, paki-send lang ng full name, mobile number, at preferred schedule.</div>
             <div class="bubble patient demo-beat" id="demoBeatPatient">Mag-book ko ugma, 10 AM. Maria Clara, 0917 123 4567.</div>
-            <div class="bubble bot demo-beat" id="demoBeatBot">Salamat po, Maria. Na-book na po kayo bukas, 10:00 AM, para sa dental cleaning. Na-save na ito sa booking sheet ng clinic.</div>
+            <div class="bubble bot demo-beat" id="demoBeatBot">Salamat, Maria. Na-book na ka ugma, 10:00 AM, para sa dental cleaning. Na-save na ni sa booking sheet sa clinic.</div>
           </div>
         </div>
         <div id="demoPayoff" hidden>
-          <div class="demo-alert"><strong>Telegram alert:</strong> New booking: Maria Clara, Dental Cleaning, tomorrow 10:00 AM.</div>
+          <div class="demo-alert"><strong>Telegram alert:</strong> <span id="demoAlertText">Bag-ong booking: Maria Clara, Dental Cleaning, ugma 10:00 AM.</span></div>
           <div class="demo-list-title">Bookings</div>
           <div class="demo-sheet-list" aria-label="Sample bookings list">
             <div class="demo-sheet-row"><span>Maria Clara · Dental Cleaning</span><strong>Tomorrow, 10:00 AM</strong></div>
@@ -441,6 +454,23 @@
       el.removeEventListener('animationend', handler);
     });
   }
+  var DEMO_STRINGS = {
+    tl: {
+      patientPrice: 'Magkano po ang cleaning?',
+      botPrice: 'Hi po! Ang dental cleaning namin ay {price} po. Kung gusto ninyo mag-book, paki-send lang ng full name, mobile number, at preferred schedule.',
+      patientBooking: 'Mag-book po ako bukas, 10 AM. Maria Clara, 0917 123 4567.',
+      botConfirm: 'Salamat po, Maria. Na-book na po kayo bukas, 10:00 AM, para sa dental cleaning. Na-save na ito sa booking sheet ng clinic.',
+      alertText: 'New booking: Maria Clara, Dental Cleaning, tomorrow 10:00 AM.'
+    },
+    bis: {
+      patientPrice: 'Pila ang cleaning?',
+      botPrice: 'Hi! Ang among dental cleaning kay {price}. Kung gusto ka mag-book, palihug ipadala lang ang imong full name, mobile number, ug preferred schedule.',
+      patientBooking: 'Mag-book ko ugma, 10 AM. Maria Clara, 0917 123 4567.',
+      botConfirm: 'Salamat, Maria. Na-book na ka ugma, 10:00 AM, para sa dental cleaning. Na-save na ni sa booking sheet sa clinic.',
+      alertText: 'Bag-ong booking: Maria Clara, Dental Cleaning, ugma 10:00 AM.'
+    }
+  };
+  var demoLang = 'bis';
   function renderDemoReply() {
     var input = document.getElementById('demoCleaningPrice');
     var cell = document.getElementById('demoCleaningCell');
@@ -450,9 +480,7 @@
     samplePrices.cleaning = val;
     var changed = lastRenderedPrice !== null && lastRenderedPrice !== val;
     cell.textContent = val;
-    bubble.textContent =
-      'Hi po! Ang dental cleaning namin ay ' + val +
-      ' po. Kung gusto ninyo mag-book, paki-send lang ng full name, mobile number, at preferred schedule.';
+    bubble.textContent = DEMO_STRINGS[demoLang].botPrice.replace('{price}', val);
     if (changed) {
       flashEl(cell);
       flashEl(bubble);
@@ -478,6 +506,26 @@
     });
   }
   renderDemoReply();
+
+  function setDemoLang(lang) {
+    if (!DEMO_STRINGS[lang]) return;
+    demoLang = lang;
+    document.querySelectorAll('.langbtn').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.dataset.lang === lang ? 'true' : 'false');
+    });
+    var pp = document.getElementById('demoPatientPrice');
+    if (pp) pp.textContent = DEMO_STRINGS[lang].patientPrice;
+    var pb = document.getElementById('demoBeatPatient');
+    if (pb) pb.textContent = DEMO_STRINGS[lang].patientBooking;
+    var bb = document.getElementById('demoBeatBot');
+    if (bb) bb.textContent = DEMO_STRINGS[lang].botConfirm;
+    var at = document.getElementById('demoAlertText');
+    if (at) at.textContent = DEMO_STRINGS[lang].alertText;
+    renderDemoReply();
+  }
+  document.querySelectorAll('.langbtn').forEach(function (b) {
+    b.addEventListener('click', function () { setDemoLang(b.dataset.lang); });
+  });
 
   // Beats 2 and 3: the sample booking happens, the sheet row and the
   // Telegram alert appear. Front-end only, sample data throughout.
