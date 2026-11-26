@@ -26,7 +26,6 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Cpath d='M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z' fill='%23ffffff'/%3E%3C/svg%3E">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -45,6 +44,9 @@
 }
 </script>
 <style>
+  /* Shared tokens, GT-138: spacing scale 4, 8, 12, 16, 24, 32, 48. Type scale: 12 labels, 13 notes, 14 secondary body, 16 body and lede, headings at 18, 24, 32, 44 by role. Display numerals (brand, step numbers, prices) sit outside the text scale. */
+  /* Radius rule, GT-138: ledger surfaces and tags squared at 0 to 2px, interactive controls 4px, phone mock the single deliberate exception at 14px as a device depiction. */
+  .brand-mark{fill:var(--teal)}
   :root{
     --paper:#faf8f3;
     --ink:#1c2420;
@@ -112,37 +114,36 @@
   .topnote{font-size:13px;color:var(--muted)}
   button.loginbtn{
     background:var(--teal);color:var(--btn-text);border:none;border-radius:4px;
-    padding:10px 18px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;
-    font-size:14.5px;font-weight:600;cursor:pointer;transition:background-color .15s ease;
+    padding:11px 20px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;
+    font-size:15px;font-weight:600;cursor:pointer;transition:background-color .15s ease;
   }
   button.loginbtn:hover{background:var(--teal-dark)}
   button.loginbtn:active{background:var(--teal-dark)}
   button.loginbtn:disabled{opacity:.65;cursor:wait}
   button.loginbtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .login-banner{
-    display:flex;visibility:hidden;min-height:48px;margin:18px 0 0;padding:12px 14px;border-radius:4px;
+    display:none;min-height:48px;margin:18px 0 0;padding:12px 14px;border-radius:4px;
     background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber);
     font-size:14px;font-weight:600;align-items:center;gap:12px;flex-wrap:wrap;
   }
-  .login-banner.show{visibility:visible}
+  .login-banner.show{display:flex}
   .hero{padding:40px 0 30px;border-bottom:1px solid var(--line)}
   .kicker{font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:14px}
   .kicker::before{content:"";display:inline-block;width:8px;height:8px;background:var(--teal);margin-right:10px;vertical-align:1px}
   h1{font-family:Georgia,"Times New Roman",serif;font-size:44px;line-height:1.12;font-weight:700;max-width:680px}
-  .hero p.lede{margin-top:16px;font-size:17px;color:var(--muted);max-width:640px}
+  .hero p.lede{margin-top:16px;font-size:16px;color:var(--muted);max-width:640px}
   .hero p.lede2{margin-top:10px}
   .herobtn{
     margin-top:20px;display:inline-flex;align-items:center;justify-content:center;
     min-height:48px;padding:11px 20px;border-radius:4px;border:none;
     background:var(--teal);color:var(--btn-text);text-decoration:none;cursor:pointer;
-    font-size:15px;font-weight:600;font-family:inherit;
+    font-size:15px;font-weight:600;font-family:inherit;transition:background-color .15s ease;
   }
   .herobtn:hover{background:var(--teal-dark)}
   .herobtn:active{background:var(--teal-dark)}
   .herobtn:disabled{opacity:.65;cursor:wait}
   .herobtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-  .herobtn{transition:background-color .15s ease}
-  .cta-note{margin-top:10px;font-size:13.5px;color:var(--muted);max-width:640px}
+  .cta-note{margin-top:10px;font-size:13px;color:var(--muted);max-width:640px}
   .trustrow{
     display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;align-items:center;
     font-size:13px;color:var(--muted);
@@ -150,57 +151,57 @@
   .trustrow .titem{display:inline-flex;align-items:center;gap:6px}
   .trustrow svg{color:var(--teal);flex-shrink:0}
   .howseq{
-    margin:22px 0 0;border-top:2px solid var(--rule);
+    margin:0;padding:32px 0 0;border-top:2px solid var(--rule);
   }
-  .howstep{padding:16px 2px;display:flex;gap:18px;align-items:flex-start}
+  .howstep{padding:16px 0;display:flex;gap:18px;align-items:flex-start}
   .howstep + .howstep{border-top:1px solid var(--line)}
   .hownum{
     font-family:Georgia,"Times New Roman",serif;font-size:30px;line-height:1;
     font-weight:700;color:var(--teal);flex-shrink:0;width:38px;margin-top:1px;
   }
   .howstep h3{display:block;font-size:14px;margin-bottom:4px}
-  .howstep p{font-size:13.5px;color:var(--muted)}
-  section{padding:36px 0 0}
+  .howstep p{font-size:13px;color:var(--muted)}
+  section{padding:32px 0 0}
+  section#closing{border-top:1px solid var(--line)}
   h2{font-family:Georgia,"Times New Roman",serif;font-size:24px;margin-bottom:6px}
-  .sub{color:var(--muted);font-size:14.5px;max-width:640px}
+  .sub{color:var(--muted);font-size:14px;max-width:640px}
   .demo-panel{
     margin-top:16px;border:1px solid var(--line);border-top:2px solid var(--rule);background:var(--card);
     padding:20px 22px;display:grid;grid-template-columns:1fr 1.15fr;gap:22px;align-items:start;
   }
   @media (min-width:821px){
-    .demo-panel > div:last-child{margin-top:-36px}
+    .demo-panel > div{margin-top:-36px}
   }
   .demo-badge{
-    display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.4px;
+    display:inline-block;font-size:12px;font-weight:700;letter-spacing:.4px;
     text-transform:uppercase;padding:3px 9px;border:1px solid var(--amber);
     background:var(--amber-bg);color:var(--amber);margin-bottom:10px;
   }
   .demo-sheet-list{
     margin:10px 0 14px;border:1px solid var(--line);border-radius:4px;
-    font-size:13.5px;background:var(--paper);
+    font-size:14px;background:var(--paper);
   }
   .demo-sheet-row{
-    display:flex;justify-content:space-between;gap:10px;padding:7px 11px;
+    display:flex;justify-content:space-between;gap:10px;padding:8px 12px;
     border-bottom:1px solid var(--line);color:var(--muted);
   }
   .demo-sheet-row:last-child{border-bottom:none}
   .demo-sheet-row strong{color:var(--ink);font-weight:600}
   .demo-controls{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
   .demo-controls .demo-field{flex:1;min-width:150px}
-  label{font-size:12.5px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px}
+  label{font-size:12px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px}
   input[type=text]{
-    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:4px;
+    width:100%;padding:10px 12px;min-height:48px;border:1px solid var(--line);border-radius:4px;
     font-size:16px;background:var(--card);color:var(--ink);
   }
-  input[type=text]:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
+  input[type=text]:focus{outline:2px solid var(--teal);outline-offset:2px;border-color:var(--teal)}
   button.savebtn{
     background:var(--save-bg);color:var(--save-text);border:none;border-radius:4px;
-    padding:10px 16px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;
-    font-size:14px;font-weight:600;cursor:pointer;
+    padding:11px 20px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;
+    font-size:15px;font-weight:600;cursor:pointer;transition:background-color .15s ease;
   }
   button.savebtn:hover{background:var(--save-hover)}
   button.savebtn:active{background:var(--save-hover)}
-  button.savebtn{transition:background-color .15s ease}
   button.savebtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .phone-mock{
     border:2px solid var(--rule);border-radius:14px;background:var(--chat-bg);overflow:hidden;
@@ -212,7 +213,7 @@
   .phone-head span{color:var(--muted);font-weight:500;font-size:12px}
   .chat-body{padding:14px;display:flex;flex-direction:column;gap:10px}
   .bubble{
-    max-width:88%;padding:9px 12px;border-radius:10px;font-size:13.5px;line-height:1.45;
+    max-width:88%;padding:8px 12px;border-radius:6px;font-size:14px;line-height:1.45;
   }
   .bubble.patient{
     align-self:flex-end;background:var(--chat-user-bg);color:var(--chat-user-ink);
@@ -226,15 +227,16 @@
   .flash{animation:priceFlash .9s ease}
   @media (prefers-reduced-motion: reduce){
     .flash{animation:none}
+    button.loginbtn,.herobtn,button.savebtn{transition:none}
   }
   .demo-bookbtn{margin-top:12px}
   .demo-alert{
     margin-top:12px;border:1px dashed var(--teal);background:var(--tg-bg);
-    padding:12px 14px;font-size:13.5px;color:var(--ink);
+    padding:12px 14px;font-size:14px;color:var(--ink);
   }
   .demo-alert strong{color:var(--teal)}
   .demo-list-title{
-    margin-top:14px;font-size:12.5px;font-weight:600;letter-spacing:.4px;
+    margin-top:14px;font-size:12px;font-weight:600;letter-spacing:.4px;
     text-transform:uppercase;color:var(--muted);
   }
   .demo-note{margin-top:12px}
@@ -243,18 +245,17 @@
     border-top:2px solid var(--rule);padding:20px 22px;display:flex;flex-direction:column;gap:8px;
   }
   .pilot-grid{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:center}
-  .pilot-priceblock{border-left:1px solid var(--line);padding-left:24px}
+  .pilot-priceblock{border-left:1px solid var(--line);padding-left:16px}
   .pilot-text{display:flex;flex-direction:column;gap:8px}
   .pilot-price{font-family:Georgia,"Times New Roman",serif;font-size:34px;font-weight:700;line-height:1.1}
-  .pilot-price-cap{font-size:12.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-top:2px}
-  .pilot-regular{font-size:13.5px;color:var(--muted);margin-top:6px}
-  .pilotbox p{font-size:14.5px;color:var(--ink)}
+  .pilot-price-cap{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-top:2px}
+  .pilot-regular{font-size:13px;color:var(--muted);margin-top:6px}
+  .pilotbox p{font-size:16px;color:var(--ink)}
   .pilotbox p.pilotnext{font-size:14px;color:var(--muted)}
   .pilotbox .herobtn{align-self:flex-start;margin-top:6px}
-  .pilotbox .trustrow{margin-top:6px}
   .contact-line{font-size:14px;color:var(--muted)}
   footer{
-    margin-top:44px;border-top:2px solid var(--rule);padding:16px 0 30px;
+    margin-top:48px;border-top:2px solid var(--rule);padding:16px 0 30px;
     font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:8px;
   }
   .footer-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -278,7 +279,7 @@
 <div class="wrap">
 
   <header class="top">
-    <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0f766e"/><path d="M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="#ffffff"/></svg>ClinicFlow <span>PH</span></div>
+    <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect class="brand-mark" width="32" height="32" rx="7"/><path d="M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="#ffffff"/></svg>ClinicFlow <span>PH</span></div>
     <div class="head-actions">
       <div class="topnote">Messenger front desk for Philippine dental clinics</div>
       <button class="loginbtn" type="button" data-login>Log in with Google</button>
@@ -395,11 +396,6 @@
         </div>
       </div>
       <p class="pilotnext">To get started, log in with Google, then finish the three connections in your dashboard.</p>
-      <div class="trustrow">
-        <span class="titem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Your accounts stay under your name</span>
-        <span class="titem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>We never see your passwords</span>
-        <span class="titem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Disconnect anytime</span>
-      </div>
       <button class="herobtn" type="button" data-login>Start a pilot</button>
       <p class="cta-note">Free to log in and connect. You pay only when you confirm your pilot.</p>
       <p class="contact-line">Questions first? Reply to the message that sent you this link, and we will answer before you connect anything.</p>
