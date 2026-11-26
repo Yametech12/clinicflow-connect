@@ -657,13 +657,30 @@
     return firebaseAuthPromise;
   }
 
+  // GT-140 FE-1: a redirect return is only in progress when this flag is
+  // set (immediately before signInWithRedirect runs). Without it, a cold
+  // visit must never surface a sign in failure: an SDK import or load
+  // failure on a cold visit is swallowed silently.
+  var FB_REDIRECT_FLAG = 'cf_fb_redirect_pending';
+  function fbRedirectPending() {
+    try { return sessionStorage.getItem(FB_REDIRECT_FLAG) === '1'; } catch (e) { return false; }
+  }
+  function setFbRedirectPending() {
+    try { sessionStorage.setItem(FB_REDIRECT_FLAG, '1'); } catch (e) { /* flag stays unset */ }
+  }
+  function clearFbRedirectPending() {
+    try { sessionStorage.removeItem(FB_REDIRECT_FLAG); } catch (e) { /* nothing to clear */ }
+  }
+
   // Returning from the Firebase redirect: exchange the result for an ID
   // token, post it to the bridge, and open the dashboard on success.
   function handleFirebaseReturn() {
     if (!firebaseReady()) return;
+    var redirectPending = fbRedirectPending();
     loadFirebaseAuth()
       .then(function (ctx) { return ctx.authMod.getRedirectResult(ctx.auth); })
       .then(function (result) {
+        clearFbRedirectPending();
         if (!result || !result.user) return null;
         return result.user.getIdToken();
       })
@@ -680,10 +697,14 @@
               window.location.href = '/dashboard';
               return;
             }
-            showLoginBanner('Sign in did not finish. Please try again.');
+            if (redirectPending) {
+              showLoginBanner('Sign in did not finish. Please try again.');
+            }
           });
       })
       .catch(function () {
+        if (!redirectPending) return;
+        clearFbRedirectPending();
         showLoginBanner('Sign in did not finish. Please try again.');
       });
   }
@@ -693,9 +714,11 @@
     loadFirebaseAuth()
       .then(function (ctx) {
         var provider = new ctx.authMod.GoogleAuthProvider();
+        setFbRedirectPending();
         return ctx.authMod.signInWithRedirect(ctx.auth, provider);
       })
       .catch(function () {
+        clearFbRedirectPending();
         restoreButtons();
         showLoginBanner('Sign in did not start. Please try again in a moment.');
       });

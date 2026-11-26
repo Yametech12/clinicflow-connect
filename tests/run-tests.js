@@ -1745,6 +1745,53 @@ function assertEq(a, b, msg) {
     assert(html.indexOf('Built for independent dental clinics') < html.indexOf('This sample shows three services'), 'moved paragraph precedes the demo note');
   });
 
+  // 40. GT-140 FE-1: cold visit with a failed Firebase SDK import shows no
+  // false sign in banner; a genuine redirect return (flag present) still can.
+  await test('firebase return gate FE-1: SDK import failure silent on cold visit, banner only with redirect flag', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const vm = require('vm');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    assert(html.includes("var FB_REDIRECT_FLAG = 'cf_fb_redirect_pending';"), 'redirect pending flag is named cf_fb_redirect_pending');
+    const startFn = html.slice(html.indexOf('function startFirebaseLogin'), html.indexOf('function startFirebaseLogin') + 700);
+    assert(startFn.indexOf('setFbRedirectPending();') !== -1, 'flag setter runs in startFirebaseLogin');
+    assert(startFn.indexOf('setFbRedirectPending();') < startFn.indexOf('signInWithRedirect'), 'flag is set immediately before signInWithRedirect is invoked');
+    const segStart = html.indexOf("var FB_REDIRECT_FLAG");
+    const segEnd = html.indexOf('handleFirebaseReturn();');
+    assert(segStart !== -1 && segEnd > segStart, 'firebase return block located');
+    const segment = html.slice(segStart, segEnd);
+    async function runReturn(flagPresent) {
+      const storeMap = new Map();
+      if (flagPresent) storeMap.set('cf_fb_redirect_pending', '1');
+      const banners = [];
+      const sandbox = {
+        sessionStorage: {
+          getItem: (k) => (storeMap.has(k) ? storeMap.get(k) : null),
+          setItem: (k, v) => storeMap.set(k, String(v)),
+          removeItem: (k) => storeMap.delete(k),
+        },
+        firebaseReady: () => true,
+        loadFirebaseAuth: () => Promise.reject(new Error('sdk import failed')),
+        showLoginBanner: (t) => banners.push(t),
+        fetchWithTimeout: () => Promise.reject(new Error('unused')),
+        window: { location: { href: '' } },
+      };
+      vm.createContext(sandbox);
+      vm.runInContext(segment + '\nhandleFirebaseReturn();', sandbox);
+      await new Promise((r) => setTimeout(r, 20));
+      return { banners, flagAfter: storeMap.has('cf_fb_redirect_pending') };
+    }
+    const cold = await runReturn(false);
+    assertEq(cold.banners.length, 0, 'cold visit with SDK import failure shows no banner');
+    const genuine = await runReturn(true);
+    assertEq(genuine.banners.length, 1, 'genuine redirect return with SDK failure still shows the banner');
+    assertEq(genuine.banners[0], 'Sign in did not finish. Please try again.', 'genuine return banner text unchanged');
+    assertEq(genuine.flagAfter, false, 'flag is cleared when the return consumes it');
+    const dash = fs.readFileSync(path.join(__dirname, '..', 'dashboard.html'), 'utf8');
+    assert(!dash.includes('handleFirebaseReturn'), 'dashboard has no dormant firebase return catch to gate');
+    assert(!dash.includes('getRedirectResult'), 'dashboard never calls getRedirectResult');
+  });
+
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - failed.length}/${results.length} tests passed`);
   if (failed.length) {
