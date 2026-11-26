@@ -1547,7 +1547,16 @@ function assertEq(a, b, msg) {
     assert(dash.includes('/firebase-config.js'), 'dashboard loads the firebase config');
     assert(dash.includes("clinic.logged_in !== true") || dash.includes('logged_in'), 'dashboard gate still keys off logged_in');
     const cfg = fs.readFileSync(path.join(__dirname, '..', 'firebase-config.js'), 'utf8');
-    assert(cfg.includes('window.CF_FIREBASE_CONFIG = null'), 'config placeholder is null, no invented values');
+    assert(!cfg.includes('window.CF_FIREBASE_CONFIG = null'), 'config placeholder replaced by the real config (GT-140 S5b)');
+    assert(cfg.includes('projectId: "clinicflow-connect-515810"'), 'config carries the ClinicFlow project id');
+    assert(cfg.includes('authDomain: "clinicflow-connect-515810.firebaseapp.com"'), 'config carries the project auth domain');
+    assert(cfg.includes('apiKey: "AIzaSyDfmZBYNlKkQUaXM5yOo-Ds9F5yx5ai_fE"'), 'config carries the web app api key (public identifier)');
+    assertEq(firebaseAuth.getFirebaseProjectId(), 'clinicflow-test-project', 'env FIREBASE_PROJECT_ID keeps precedence over the fallback constant');
+    const fbjs = fs.readFileSync(path.join(__dirname, '..', 'api', '_firebase.js'), 'utf8');
+    assert(fbjs.includes("const DEFAULT_FIREBASE_PROJECT_ID = 'clinicflow-connect-515810';"), 'project id fallback constant present in _firebase.js');
+    const vercel = fs.readFileSync(path.join(__dirname, '..', 'vercel.json'), 'utf8');
+    assert(vercel.includes('frame-src https://apis.google.com https://clinicflow-connect-515810.firebaseapp.com'), 'CSP frame-src pinned to the single Firebase domain (F139-FE-2)');
+    assert(!vercel.includes('*.firebaseapp.com'), 'CSP wildcard removed');
     // Logged-out dashboard contract: anonymous clinic read is logged out.
     const res = makeRes();
     await clinicHandler(makeReq({ headers: { host: 'x.example', 'x-forwarded-proto': 'https' } }), res);

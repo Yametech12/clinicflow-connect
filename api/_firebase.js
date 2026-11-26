@@ -4,8 +4,9 @@
 // _session.js. Verifies the RS256 signature against Google's public
 // certificates for Firebase tokens, then checks expiry, audience, and
 // issuer. The Firebase project id comes from the FIREBASE_PROJECT_ID
-// environment variable (an identifier, not a secret). When it is unset,
-// Firebase login is not configured and callers answer setup_pending.
+// environment variable when set, and otherwise from the built-in
+// ClinicFlow project id constant below (GT-140 S5b), so Firebase login
+// is configured without any Vercel env change.
 const crypto = require('crypto');
 
 const CERTS_URL =
@@ -15,8 +16,13 @@ const CERT_CACHE_MS = 60 * 60 * 1000;
 let certCache = { fetchedAt: 0, certs: null };
 let certFetcherForTests = null;
 
+// GT-140 S5b: the ClinicFlow Firebase project id as the built-in
+// fallback, so no Vercel env var is needed. An explicit
+// FIREBASE_PROJECT_ID env value still takes precedence when set.
+const DEFAULT_FIREBASE_PROJECT_ID = 'clinicflow-connect-515810';
+
 function getFirebaseProjectId() {
-  return (process.env.FIREBASE_PROJECT_ID || '').trim() || null;
+  return (process.env.FIREBASE_PROJECT_ID || '').trim() || DEFAULT_FIREBASE_PROJECT_ID;
 }
 
 function isFirebaseConfigured() {
