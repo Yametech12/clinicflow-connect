@@ -17,6 +17,7 @@
   /* Shared tokens, GT-138: spacing scale 4, 8, 12, 16, 24, 32, 48. Type scale: 12 labels, 13 notes, 14 secondary body, 16 body and lede, headings at 18, 24, 32, 44 by role. Display numerals (brand, step numbers, prices) sit outside the text scale. */
   /* Radius rule, GT-138: surfaces 0, tags 2px, controls 4px. */
   .brand-mark{fill:var(--teal)}
+  .brand-check{stroke:var(--teal)}
   :root{
     --paper:#faf8f3;
     --ink:#1c2420;
@@ -111,7 +112,7 @@
   }
   .brand{font-family:Georgia,"Times New Roman",serif;font-size:26px;font-weight:700;letter-spacing:.2px}
   .brand span{color:var(--teal)}
-  .brand svg{vertical-align:-5px;margin-right:8px}
+  .brand svg{vertical-align:-8px;margin-right:8px}
   .head-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   .topnote{font-size:13px;color:var(--muted)}
   .logoutform{display:inline-flex}
@@ -295,7 +296,7 @@
 </head>
 <body>
 <div class="wrap dash-shell" id="dashShell">
-  <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect class="brand-mark" width="32" height="32" rx="7"/><path d="M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="#ffffff"/></svg>ClinicFlow <span>PH</span></div>
+  <div class="brand"><svg width="32" height="32" viewBox="0 0 64 64" aria-hidden="true"><rect class="brand-mark" width="64" height="64" rx="14"/><path d="M21 9h22c6 0 11 4.6 11 11 0 4.4-1.6 7.6-3.2 10.6L54 52l-13.4-6.4c-.9 1.2-1.5 3-2 5-.7 2.6-1.7 4.4-4.1 4.4-2.3 0-3.2-1.8-3.8-4.2-.3-1.3-.6-2.8-1.7-2.8s-1.4 1.5-1.7 2.8c-.6 2.4-1.5 4.2-3.8 4.2-2.4 0-3.4-1.8-4.1-4.4-.9-3.4-1.6-6.4-2.8-9.4C11.4 28.4 10 25.4 10 20c0-6.4 5-11 11-11z" fill="#ffffff"/><path class="brand-check" d="M24.5 30.5l5.5 5.5L40 25" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>ClinicFlow <span>PH</span></div>
   <div class="shell-note" id="shellNote"><span class="pill checking">Loading</span><span>Loading your dashboard</span></div>
   <div class="shell-lines" id="shellLines" aria-hidden="true">
     <div class="shell-line w85"></div>
@@ -335,7 +336,7 @@
   </nav>
 
   <header class="top">
-    <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect class="brand-mark" width="32" height="32" rx="7"/><path d="M8 10h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H13l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="#ffffff"/></svg>ClinicFlow <span>PH</span></div>
+    <div class="brand"><svg width="32" height="32" viewBox="0 0 64 64" aria-hidden="true"><rect class="brand-mark" width="64" height="64" rx="14"/><path d="M21 9h22c6 0 11 4.6 11 11 0 4.4-1.6 7.6-3.2 10.6L54 52l-13.4-6.4c-.9 1.2-1.5 3-2 5-.7 2.6-1.7 4.4-4.1 4.4-2.3 0-3.2-1.8-3.8-4.2-.3-1.3-.6-2.8-1.7-2.8s-1.4 1.5-1.7 2.8c-.6 2.4-1.5 4.2-3.8 4.2-2.4 0-3.4-1.8-4.1-4.4-.9-3.4-1.6-6.4-2.8-9.4C11.4 28.4 10 25.4 10 20c0-6.4 5-11 11-11z" fill="#ffffff"/><path class="brand-check" d="M24.5 30.5l5.5 5.5L40 25" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>ClinicFlow <span>PH</span></div>
     <div class="head-actions">
       <div class="topnote" id="signedInAs">Signed in</div>
       <form class="logoutform" method="post" action="/api/logout"><button class="logoutbtn" type="submit">Log out</button></form>
