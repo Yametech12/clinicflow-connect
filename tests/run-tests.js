@@ -1555,6 +1555,187 @@ function assertEq(a, b, msg) {
     assertEq(res.body.authenticated, false, 'anonymous session authenticated false');
   });
 
+
+  // 32. GT-140 FL140-01: dashboard shell shows a single loading label.
+  await test('loading label FL140-01: dashboard shell has one loading text, retry and redirect intact', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'dashboard.html'), 'utf8');
+    assert(!html.includes('Loading your dashboard'), 'duplicate loading label removed');
+    assert(html.includes('<span class="pill checking">Loading</span>'), 'single Loading pill remains');
+    assert(html.includes('id="shellRetry"'), 'timeout retry state still present');
+    assert(html.includes("window.location.replace('/?login=1')"), 'logged out redirect still present');
+  });
+
+  // 33. GT-140 FL140-02: CTA labels unified with one named exception.
+  await test('cta gate FL140-02: landing data-login buttons read Start a pilot except the return sign in banner', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    const labels = [...html.matchAll(/<button[^>]*data-login[^>]*>([^<]+)<\/button>/g)].map((m) => m[1].trim());
+    assertEq(labels.length, 5, 'five data-login buttons on the landing');
+    assertEq(labels.filter((l) => l === 'Start a pilot').length, 4, 'four buttons read Start a pilot');
+    assertEq(labels.filter((l) => l === 'Log in with Google').length, 1, 'one named exception keeps Log in with Google');
+    const banner = html.slice(html.indexOf('id="loginBanner"'), html.indexOf('class="hero"'));
+    assert(banner.includes('>Log in with Google</button>'), 'the exception is the login banner button');
+    const header = html.slice(html.indexOf('<header class="top">'), html.indexOf('</header>'));
+    assert(header.includes('>Start a pilot</button>'), 'header button reads Start a pilot');
+  });
+
+  // 34. GT-140 FL140-03: header lockup nowrap rules on all three pages.
+  await test('header gate FL140-03: nowrap lockup, brand shrink 0, topnote hidden at 820, busy min-width', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    for (const file of ['index.html', 'dashboard.html', '404.html']) {
+      const html = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+      const head = html.slice(html.indexOf('header.top{'), html.indexOf('.brand{'));
+      assert(head.includes('flex-wrap:nowrap'), file + ' header never wraps');
+      assert(head.includes('gap:12px'), file + ' header gap 12px');
+      assert(html.includes('white-space:nowrap;flex-shrink:0'), file + ' brand nowrap and shrink 0');
+      assert(html.includes('.brand{font-size:20px}'), file + ' brand 20px at 560 and below');
+    }
+    const idx = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    assert(idx.includes('.head-actions .topnote{display:none}'), 'landing topnote hidden at 820 and below');
+    assert(idx.includes('button.loginbtn:disabled{min-width:132px}'), 'busy header button min-width 132px');
+    assert(idx.includes('header.top button.loginbtn{padding:11px 16px}'), 'header login padding 16px');
+    const dash = fs.readFileSync(path.join(__dirname, '..', 'dashboard.html'), 'utf8');
+    assert(dash.includes('#signedInAs{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}'), 'signed in note truncates');
+    assert(dash.includes('.head-actions .topnote{display:none}'), 'dashboard topnote hidden at 820 and below');
+  });
+
+  // 35. GT-140 FL140-04: Booked Tooth mark, icon set, manifest, stroke system.
+  await test('icon gate FL140-04: Booked Tooth everywhere, old bubble gone, icon files at specced sizes', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const root = path.join(__dirname, '..');
+    const tooth = 'M21 9h22c6 0 11 4.6 11 11';
+    const oldBubble = 'M8 10h16a2 2 0 0 1 2 2v8';
+    for (const file of ['index.html', 'dashboard.html', '404.html', 'favicon.svg']) {
+      const html = fs.readFileSync(path.join(root, file), 'utf8');
+      assert(html.includes(tooth), file + ' carries the Booked Tooth path');
+      assert(!html.includes(oldBubble), file + ' has no old bubble path');
+    }
+    for (const file of ['index.html', 'dashboard.html', '404.html']) {
+      const html = fs.readFileSync(path.join(root, file), 'utf8');
+      assert(html.includes('.brand-check{stroke:var(--teal)}'), file + ' brand-check rule present');
+    }
+    const idx = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+    assert(!idx.includes('stroke-width="3"'), 'no stroke width 3 icons remain on the landing');
+    assertEq((idx.match(/stroke-width="2" stroke-linecap="round"/g) || []).length, 3, 'three trust checks at stroke width 2');
+    const pngSize = (f) => {
+      const b = fs.readFileSync(path.join(root, f));
+      assertEq(b.toString('ascii', 1, 4), 'PNG', f + ' is a PNG');
+      return [b.readUInt32BE(16), b.readUInt32BE(20)];
+    };
+    assertEq(JSON.stringify(pngSize('icon-192.png')), JSON.stringify([192, 192]), 'icon-192 is 192x192');
+    assertEq(JSON.stringify(pngSize('icon-512.png')), JSON.stringify([512, 512]), 'icon-512 is 512x512');
+    assertEq(JSON.stringify(pngSize('apple-touch-icon.png')), JSON.stringify([180, 180]), 'apple touch icon is 180x180');
+    assertEq(JSON.stringify(pngSize('icon-maskable-512.png')), JSON.stringify([512, 512]), 'maskable icon is 512x512');
+    const ico = fs.readFileSync(path.join(root, 'favicon.ico'));
+    assertEq(ico.readUInt16LE(4), 3, 'ICO has exactly 3 entries');
+    const icoSizes = [0, 1, 2].map((i) => ico[6 + i * 16]);
+    assertEq(JSON.stringify(icoSizes), JSON.stringify([16, 32, 48]), 'ICO entries are 16, 32, 48');
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
+    const maskable = manifest.icons.filter((i) => i.purpose === 'maskable');
+    assertEq(maskable.length, 1, 'one maskable manifest entry');
+    assertEq(maskable[0].src, '/icon-maskable-512.png', 'maskable entry points at the padded file');
+  });
+
+  // 36. GT-140 FL140-05 + FL140-06 + FL140-07: demo dedup, toggle, staged reveal.
+  await test('demo gate FL140-05/06/07: badge gone, toggle strings verbatim, three beat reveal with reset', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    assert(!html.includes('demo-badge'), 'demo badge element and rule removed');
+    assertEq((html.match(/Sample demo with sample prices/g) || []).length, 1, 'sample prices sentence appears once');
+    assert(html.includes('The bot answers in Tagalog or Bisaya, matching your patients.'), 'selling point sentence in the demo sub');
+    assert(html.includes('<button type="button" class="langbtn" data-lang="bis" aria-pressed="true">Bisaya</button>'), 'Bisaya is the pressed default');
+    assert(html.includes('<button type="button" class="langbtn" data-lang="tl" aria-pressed="false">Tagalog</button>'), 'Tagalog toggle present');
+    for (const str of [
+      'Magkano po ang cleaning?',
+      'Ang dental cleaning namin ay {price} po',
+      'Mag-book po ako bukas, 10 AM. Maria Clara, 0917 123 4567.',
+      'Na-book na po kayo bukas, 10:00 AM',
+      'New booking: Maria Clara, Dental Cleaning, tomorrow 10:00 AM.',
+      'Pila ang cleaning?',
+      'Hi! Ang among dental cleaning kay {price}. Kung gusto ka mag-book, palihug ipadala lang ang imong full name, mobile number, ug preferred schedule.',
+      'Mag-book ko ugma, 10 AM. Maria Clara, 0917 123 4567.',
+      'Salamat, Maria. Na-book na ka ugma, 10:00 AM, para sa dental cleaning. Na-save na ni sa booking sheet sa clinic.',
+      'Bag-ong booking: Maria Clara, Dental Cleaning, ugma 10:00 AM.',
+    ]) {
+      assert(html.includes(str), 'demo string present: ' + str.slice(0, 40));
+    }
+    assert(html.includes("DEMO_STRINGS[demoLang].botPrice.replace('{price}', val)"), 'price reply rebuilt through renderDemoReply from the template');
+    assert(html.includes('id="demoAlertText"'), 'alert line has a swappable span');
+    assert(html.includes('Confirm the booking'), 'beat 1 relabel present');
+    assert(html.includes('id="demoResetBtn"') && html.includes('Reset the demo'), 'reset control present');
+    assert(html.includes('var demoBeat = 0;'), 'reveal keyed off one beat state variable');
+  });
+
+  // 37. GT-140 FL140-08 + FL140-09 + E-7: heading, timeline, deposit figure.
+  await test('structure gate FL140-08/09: How it works heading, setup timeline both pages, peso deposit both pages', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const idx = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    assert(idx.includes('<h2 class="how-title">How it works</h2>'), 'How it works h2 present');
+    assert(idx.indexOf('How it works') < idx.indexOf('class="howseq"'), 'heading sits before the flow');
+    for (const file of ['index.html', 'dashboard.html']) {
+      const html = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+      assert(html.includes('class="setup-timeline'), file + ' has the setup timeline');
+      for (const label of ['YOUR PART (ABOUT 15 MINUTES)', 'OUR PART (3 DAYS)', 'TOGETHER (LIVE WALKTHROUGH)']) {
+        assert(html.includes(label), file + ' timeline label: ' + label);
+      }
+      assert(html.includes('<div class="pilot-deposit">₱2,750 deposit to start</div>'), file + ' priceblock states the peso deposit');
+      assert(html.includes('50 percent deposit (₱2,750) by GCash, Maya, or InstaPay to start'), file + ' terms sentence carries the peso figure');
+    }
+    const dash = fs.readFileSync(path.join(__dirname, '..', 'dashboard.html'), 'utf8');
+    assert(dash.includes('class="setup-timeline dash"'), 'dashboard timeline is the compact one column version');
+    assert(dash.includes('Live walkthrough: you see the bot answer on your Page; the balance is due then.'), 'dashboard compact walkthrough sentence');
+  });
+
+  // 38. GT-140 FL140-10 + FL140-11: contact route, legal pages, footer links, no em dashes.
+  await test('contact and legal gate FL140-10/11: mailto present, privacy and terms real practices, footer links, zero em dashes', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const root = path.join(__dirname, '..');
+    for (const file of ['index.html', 'dashboard.html']) {
+      const html = fs.readFileSync(path.join(root, file), 'utf8');
+      assert(html.includes('href="mailto:epimetheus.support@gmail.com"'), file + ' carries the contact mailto');
+      assert(html.includes('href="/privacy"') && html.includes('href="/terms"'), file + ' footer links to both legal pages');
+    }
+    for (const file of ['privacy.html', 'terms.html']) {
+      assert(fs.existsSync(path.join(root, file)), file + ' exists at repo root');
+      const html = fs.readFileSync(path.join(root, file), 'utf8');
+      assert(html.includes('href="/privacy"') && html.includes('href="/terms"'), file + ' cross links the legal pages');
+      assert(!html.includes('\u2014'), file + ' has no em dash');
+    }
+    const privacy = fs.readFileSync(path.join(root, 'privacy.html'), 'utf8');
+    for (const fact of ["clinic's own Google Sheet", "clinic's own Google Calendar", "clinic's own Telegram", "never sees or stores their passwords", 'Disconnect anytime']) {
+      assert(privacy.includes(fact), 'privacy states the real practice: ' + fact);
+    }
+    const terms = fs.readFileSync(path.join(root, 'terms.html'), 'utf8');
+    for (const fact of ['₱5,500 one time', '50 percent deposit (₱2,750)', 'Setup takes 3 days']) {
+      assert(terms.includes(fact), 'terms states the published fact: ' + fact);
+    }
+    for (const file of ['index.html', 'dashboard.html', '404.html', 'privacy.html', 'terms.html']) {
+      const html = fs.readFileSync(path.join(root, file), 'utf8');
+      assert(!html.includes('\u2014'), file + ' has no em dash character');
+      const hits = html.match(/border-left\s*:\s*(?:[2-9]|\d{2,})px/g) || [];
+      assertEq(hits.length, 0, file + ' has no side accent stripes');
+    }
+  });
+
+  // 39. GT-140 FL140-12: hero paragraph moved below the demo panel.
+  await test('first screen gate FL140-12: third hero paragraph sits under the demo panel, hero keeps two ledes', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    const hero = html.slice(html.indexOf('class="hero"'), html.indexOf('<section id="demo">'));
+    assert(!hero.includes('Built for independent dental clinics'), 'moved paragraph is out of the hero');
+    assert(html.indexOf('Built for independent dental clinics') > html.indexOf('id="demoPayoff"'), 'moved paragraph sits under the demo panel');
+    assert(html.indexOf('Built for independent dental clinics') < html.indexOf('This sample shows three services'), 'moved paragraph precedes the demo note');
+  });
+
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - failed.length}/${results.length} tests passed`);
   if (failed.length) {
